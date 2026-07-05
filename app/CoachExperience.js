@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const positionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
 
@@ -28,11 +29,13 @@ export default function CoachExperience() {
   const [documents, setDocuments] = useState(null);
   const [tab, setTab] = useState("resume");
   const [error, setError] = useState("");
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
     if (draft) { try { const parsed = JSON.parse(draft); setResume(parsed.resume || ""); setJobDescription(parsed.jobDescription || ""); } catch {} }
   }, []);
+  useEffect(() => { if(process.env.NEXT_PUBLIC_SUPABASE_URL) createClient().auth.getUser().then(({data})=>setUser(data.user)); }, []);
   useEffect(() => { localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })); }, [resume, jobDescription]);
 
   async function callCoach(action, payload) {
@@ -64,6 +67,7 @@ export default function CoachExperience() {
     try {
       const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning });
       setDocuments(data); setStage("result"); localStorage.setItem("resumecoach_latest", JSON.stringify(data));
+      fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({resume,jobDescription,analysis,answers,positioning,documents:data})}).catch(()=>{});
     } catch (e) { setError(e.message); setStage("strategy"); }
   }
 
@@ -71,7 +75,7 @@ export default function CoachExperience() {
   const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
 
   return <main className="min-h-screen bg-[#f4f2eb] text-ink">
-    <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">Private by default</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span></div></div></header>
+    <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">{user?.email||"Private by default"}</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span>{user&&<button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="ml-2 underline underline-offset-4">Sign out</button>}</div></div></header>
 
     {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
