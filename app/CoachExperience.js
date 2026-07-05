@@ -1,0 +1,109 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+const positionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
+
+function Logo() {
+  return <button onClick={() => location.reload()} className="flex items-center gap-3 text-left"><span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#18201d] text-lg text-white shadow-lg shadow-emerald-950/10">R</span><span><strong className="block font-display text-lg leading-none">ResumeCoach</strong><small className="text-[11px] text-ink/45">Your story, positioned well.</small></span></button>;
+}
+
+function Pill({ children, active, onClick }) {
+  return <button type="button" onClick={onClick} className={`rounded-full border px-4 py-2 text-sm transition ${active ? "border-[#1f6650] bg-[#1f6650] text-white shadow-md shadow-emerald-900/10" : "border-black/10 bg-white/70 text-ink/65 hover:-translate-y-0.5 hover:border-[#1f6650]/40 hover:bg-white"}`}>{children}</button>;
+}
+
+function Loading({ copy }) {
+  return <div className="mx-auto flex max-w-lg flex-col items-center py-24 text-center"><div className="relative mb-8 h-20 w-20"><span className="absolute inset-0 animate-ping rounded-full bg-[#98bfae]/25"/><span className="absolute inset-2 animate-pulse rounded-full bg-[#1f6650]"/><span className="absolute inset-0 grid place-items-center text-2xl text-white">✦</span></div><h2 className="font-display text-3xl">{copy}</h2><p className="mt-3 text-sm leading-6 text-ink/50">Reading for evidence, patterns and the story a recruiter needs to understand.</p></div>;
+}
+
+export default function CoachExperience() {
+  const [stage, setStage] = useState("input");
+  const [resume, setResume] = useState("");
+  const [jobDescription, setJobDescription] = useState("");
+  const [analysis, setAnalysis] = useState(null);
+  const [answers, setAnswers] = useState([]);
+  const [answer, setAnswer] = useState("");
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [positioning, setPositioning] = useState("Problem solver");
+  const [documents, setDocuments] = useState(null);
+  const [tab, setTab] = useState("resume");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const draft = localStorage.getItem("resumecoach_draft");
+    if (draft) { try { const parsed = JSON.parse(draft); setResume(parsed.resume || ""); setJobDescription(parsed.jobDescription || ""); } catch {} }
+  }, []);
+  useEffect(() => { localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })); }, [resume, jobDescription]);
+
+  async function callCoach(action, payload) {
+    const response = await fetch("/api/coach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...payload }) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "The coach could not respond just now.");
+    return data;
+  }
+
+  async function begin() {
+    setError(""); setStage("analysing");
+    try {
+      const data = await callCoach("analyse", { resume, jobDescription });
+      setAnalysis(data); setPositioning(data.recommendedPositioning || "Problem solver");
+      setStage(data.questions?.length ? "conversation" : "strategy");
+    } catch (e) { setError(e.message); setStage("input"); }
+  }
+
+  function submitAnswer() {
+    if (!answer.trim()) return;
+    const next = [...answers, { question: analysis.questions[questionIndex], answer: answer.trim() }];
+    setAnswers(next); setAnswer("");
+    if (questionIndex + 1 < analysis.questions.length) setQuestionIndex(questionIndex + 1);
+    else setStage("strategy");
+  }
+
+  async function generate() {
+    setError(""); setStage("generating");
+    try {
+      const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning });
+      setDocuments(data); setStage("result"); localStorage.setItem("resumecoach_latest", JSON.stringify(data));
+    } catch (e) { setError(e.message); setStage("strategy"); }
+  }
+
+  const canBegin = resume.trim().length > 80 && jobDescription.trim().length > 80;
+  const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
+
+  return <main className="min-h-screen bg-[#f4f2eb] text-ink">
+    <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">Private by default</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span></div></div></header>
+
+    {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
+
+    {stage === "input" && <div className="mx-auto max-w-6xl px-5 py-12 md:py-20">
+      <div className="mb-12 max-w-3xl"><span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#1f6650]/15 bg-[#dfece6] px-3 py-1.5 text-xs font-medium text-[#1f6650]">✦ A resume coach, not a template builder</span><h1 className="font-display text-5xl leading-[1.02] tracking-[-.035em] md:text-7xl">Bring the experience.<br/><em className="font-normal text-[#1f6650]">We’ll find the story.</em></h1><p className="mt-6 max-w-xl text-base leading-7 text-ink/55">Two things in. A clear strategy, stronger resume and tailored cover letter out. No twelve-step form. No buzzword bingo.</p></div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <label className="group rounded-[28px] border border-black/[.07] bg-white/65 p-5 shadow-sm transition focus-within:-translate-y-1 focus-within:border-[#1f6650]/30 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-950/5"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">Your current resume</strong><small className="text-ink/35">Plain text is perfect</small></span><textarea value={resume} onChange={e=>setResume(e.target.value)} rows="15" className="w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25" placeholder="Paste your resume here. Don’t clean it up first—we need to see the real starting point."/></label>
+        <label className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Full job ad</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="15" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/></label>
+      </div>
+      <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><p className="text-xs text-ink/40">Your draft stays in this browser. Generated content is grounded in what you provide.</p><button disabled={!canBegin} onClick={begin} className="group rounded-full bg-[#1f6650] px-7 py-4 text-sm font-semibold text-white shadow-xl shadow-emerald-900/15 transition hover:-translate-y-1 hover:bg-[#174f3f] disabled:translate-y-0 disabled:opacity-30">Find my strongest angle <span className="ml-2 inline-block transition group-hover:translate-x-1">→</span></button></div>
+    </div>}
+
+    {stage === "analysing" && <Loading copy="Finding the signal in your experience…"/>}
+
+    {stage === "conversation" && analysis && <div className="mx-auto max-w-3xl px-5 py-12 md:py-20">
+      <div className="mb-9 flex items-center justify-between"><span className="text-xs text-ink/40">A quick follow-up · {questionIndex + 1} of {analysis.questions.length}</span><button onClick={()=>setStage("strategy")} className="text-xs text-ink/40 underline underline-offset-4">Skip to strategy</button></div>
+      <div className="mb-6 flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="rounded-[24px] rounded-tl-md bg-white p-5 shadow-sm"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="font-display text-3xl leading-tight">{analysis.questions[questionIndex]}</h2><p className="mt-3 text-sm leading-6 text-ink/45">Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy.</p></div></div>
+      {answers.map((item,i)=><div key={i} className="mb-4 ml-auto max-w-[85%] rounded-[24px] rounded-tr-md bg-[#dfece6] p-4 text-sm leading-6">{item.answer}</div>)}
+      <div className="ml-14 rounded-[24px] border border-black/[.07] bg-white/70 p-3 shadow-sm"><textarea autoFocus value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none" placeholder="Type your answer…"/><div className="flex justify-end"><button onClick={submitAnswer} disabled={!answer.trim()} className="rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white disabled:opacity-30">Send →</button></div></div>
+    </div>}
+
+    {stage === "strategy" && analysis && <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
+      <div className="grid gap-8 lg:grid-cols-[1.15fr_.85fr]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your positioning</span><h1 className="mt-3 font-display text-5xl leading-tight">Here’s the story I’d lead with.</h1><p className="mt-4 max-w-xl text-base leading-7 text-ink/50">{analysis.coachingNote}</p><div className="mt-8 flex flex-wrap gap-2">{positionOptions.map(x=><Pill key={x} active={positioning.toLowerCase()===x.toLowerCase()} onClick={()=>setPositioning(x)}>{x}</Pill>)}</div><div className="mt-8 rounded-[28px] bg-[#18201d] p-7 text-white shadow-2xl shadow-emerald-950/10"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Recommended lead</p><h2 className="mt-2 font-display text-4xl">{positioning}</h2><p className="mt-4 text-sm leading-6 text-white/55">{analysis.strategyReason}</p><button onClick={generate} className="mt-7 rounded-full bg-[#e5bc78] px-6 py-3.5 text-sm font-semibold text-[#18201d] transition hover:-translate-y-1">Write my application →</button></div></section>
+      <aside className="space-y-4"><div className="rounded-[28px] border border-black/[.07] bg-white/65 p-6"><p className="text-xs uppercase tracking-widest text-ink/35">What the employer cares about</p><div className="mt-5 space-y-4">{priorityEntries.map(([key,value])=><div key={key}><div className="mb-1.5 flex justify-between text-sm"><span>{key}</span><strong>{value}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-[#1f6650]" style={{width:`${value}%`}}/></div></div>)}</div></div><div className="rounded-[28px] border border-black/[.07] bg-[#dfece6] p-6"><p className="text-xs uppercase tracking-widest text-[#1f6650]">Evidence already found</p><div className="mt-4 flex flex-wrap gap-2">{(analysis.evidence || []).map(x=><span key={x} className="rounded-full bg-white/70 px-3 py-1.5 text-xs">{x}</span>)}</div></div></aside></div>
+    </div>}
+
+    {stage === "generating" && <Loading copy="Writing it like a human who knows your value…"/>}
+
+    {stage === "result" && documents && <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
+      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your application is ready</span><h1 className="mt-2 font-display text-5xl">Strong, specific, still you.</h1></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],["coverLetter","Cover letter"],["writersNotes","Coach’s notes"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-4"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button><button onClick={()=>{const blob=new Blob([documents[tab]],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`resumecoach-${tab}.txt`;a.click()}} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download</button></aside></div>
+    </div>}
+  </main>;
+}
