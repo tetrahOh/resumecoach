@@ -1,6 +1,7 @@
 "use client";
 import {useEffect,useMemo,useState} from "react";
 import {PRIORITIES,analyseCareerAnswers,analyseJobDescription,checkPositioningConfidence,extractHiddenStrengths,generateCoverLetter,generateEvidenceMap,generateResumeContent,generateWritersNotes,recommendResumeStrategy,rewriteResumeBullet} from "@/lib/ai-service";
+import CoachExperience from "./CoachExperience";
 
 const QUESTIONS=["Tell me about your current or most recent job.","What tasks do you usually do?","What are you proud of?","What problems have you solved?","What do coworkers or managers rely on you for?","Have you ever trained or helped someone?","Have you improved a process?","Have you created documentation?","Have you worked with customers, stakeholders or difficult situations?","What tools, systems or software have you used?","What skills do you want to highlight?","What do you want recruiters to remember about you?"];
 const STRATEGIES={"Technical Expert":"Lead with specialist knowledge and technical depth.","Results Driven":"Emphasise measurable outcomes and delivery.",Leader:"Show ownership, direction and influence.","People Person":"Lead with relationships and collaboration.","Problem Solver":"Show judgement, analysis and practical solutions.",Innovator:"Highlight new ideas and better ways of working.","Reliable Professional":"Present as dependable, careful and trusted.","Fast Learner":"Show adaptability and rapid growth.","Customer Focused":"Lead with service and customer outcomes.",Balanced:"Blend capability, outcomes and teamwork."};
@@ -18,6 +19,7 @@ function Field({label,children}){return <label className="block"><span className
 const input="w-full border border-line bg-white/70 px-3 py-2.5 text-sm outline-none focus:border-brass";
 
 export default function Home(){
+ return <CoachExperience/>;
  const [step,setStep]=useState(0),[profiles,setProfiles]=useState([]),[documents,setDocuments]=useState([]),[profile,setProfile]=useState(blankProfile),[answers,setAnswers]=useState({}),[question,setQuestion]=useState(0),[job,setJob]=useState({title:"",company:"",text:""}),[analysis,setAnalysis]=useState(null),[strategy,setStrategy]=useState("Balanced"),[weights,setWeights]=useState(Object.fromEntries(PRIORITIES.map(k=>[k,50]))),[perception,setPerception]=useState([]),[template,setTemplate]=useState("ATS Simple"),[generated,setGenerated]=useState(null),[rewriteText,setRewriteText]=useState(""),[rewriteAction,setRewriteAction]=useState(REWRITES[0]),[ready,setReady]=useState(false);
  useEffect(()=>{try{setProfiles(JSON.parse(localStorage.getItem("rc_profiles")||"[]"));setDocuments(JSON.parse(localStorage.getItem("rc_documents")||"[]"))}finally{setReady(true)}},[]);
  useEffect(()=>{if(ready)localStorage.setItem("rc_profiles",JSON.stringify(profiles))},[profiles,ready]);useEffect(()=>{if(ready)localStorage.setItem("rc_documents",JSON.stringify(documents))},[documents,ready]);
