@@ -31,12 +31,17 @@ export default function CoachExperience() {
   const [error, setError] = useState("");
   const [user, setUser] = useState(null);
   const [extracting, setExtracting] = useState("");
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfileId, setActiveProfileId] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileRole, setProfileRole] = useState("");
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
     if (draft) { try { const parsed = JSON.parse(draft); setResume(parsed.resume || ""); setJobDescription(parsed.jobDescription || ""); } catch {} }
   }, []);
-  useEffect(() => { if(process.env.NEXT_PUBLIC_SUPABASE_URL) createClient().auth.getUser().then(({data})=>setUser(data.user)); }, []);
+  useEffect(() => { if(process.env.NEXT_PUBLIC_SUPABASE_URL) createClient().auth.getUser().then(({data})=>{setUser(data.user);if(data.user)fetch("/api/profiles").then(r=>r.json()).then(rows=>Array.isArray(rows)&&setProfiles(rows));}); }, []);
   useEffect(() => { localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })); }, [resume, jobDescription]);
 
   async function callCoach(action, payload) {
@@ -59,6 +64,10 @@ export default function CoachExperience() {
       if (target === "resume") setResume(result.text); else setJobDescription(result.text);
     } catch (e) { setError(e.message); } finally { setExtracting(""); }
   }
+
+  function chooseProfile(id) { const selected=profiles.find(p=>p.id===id);setActiveProfileId(id);if(selected)setResume(selected.resume_text||""); }
+  async function createProfile() { const response=await fetch("/api/profiles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:profileName,targetRole:profileRole,resume})});const result=await response.json();if(!response.ok){setError(result.error);return}setProfiles([result,...profiles]);setActiveProfileId(result.id);setProfileOpen(false);setProfileName("");setProfileRole(""); }
+  async function updateProfile() { const selected=profiles.find(p=>p.id===activeProfileId);if(!selected)return;const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,name:selected.name,targetRole:selected.target_role,resume})});const result=await response.json();if(response.ok)setProfiles(profiles.map(p=>p.id===result.id?result:p));else setError(result.error); }
 
   function saveBlob(blob, name) { const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
   async function downloadWord() { const {Document,Packer,Paragraph,TextRun}=await import("docx");const paragraphs=documents.resume.split("\n").map((line,index)=>new Paragraph({children:[new TextRun({text:line,bold:index<2||/^[A-Z][A-Z ]+$/.test(line)})],spacing:{after:line?100:40}}));const blob=await Packer.toBlob(new Document({sections:[{properties:{},children:paragraphs}]}));saveBlob(blob,"ResumeCoach-resume.docx"); }
@@ -86,7 +95,7 @@ export default function CoachExperience() {
     try {
       const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning });
       setDocuments(data); setStage("result"); localStorage.setItem("resumecoach_latest", JSON.stringify(data));
-      fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({resume,jobDescription,analysis,answers,positioning,documents:data})}).catch(()=>{});
+      fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription,analysis,answers,positioning,documents:data})}).catch(()=>{});
     } catch (e) { setError(e.message); setStage("strategy"); }
   }
 
@@ -98,8 +107,11 @@ export default function CoachExperience() {
 
     {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
+    {profileOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#18201d]/35 p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-[#f4f2eb] p-7 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">New career profile</p><h2 className="mt-2 font-display text-3xl">Save this career direction.</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep separate source resumes for different roles without mixing their stories.</p><label className="mt-6 block text-xs text-ink/50">Profile name<input autoFocus value={profileName} onChange={e=>setProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]" placeholder="e.g. Cyber Security"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input value={profileRole} onChange={e=>setProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]" placeholder="e.g. GRC Analyst"/></label><div className="mt-6 flex justify-end gap-2"><button onClick={()=>setProfileOpen(false)} className="rounded-full px-5 py-3 text-sm text-ink/50">Cancel</button><button disabled={!profileName.trim()} onClick={createProfile} className="rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white disabled:opacity-30">Create profile</button></div></div></div>}
+
     {stage === "input" && <div className="mx-auto max-w-6xl px-5 py-12 md:py-20">
       <div className="mb-12 max-w-3xl"><span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#1f6650]/15 bg-[#dfece6] px-3 py-1.5 text-xs font-medium text-[#1f6650]">✦ A resume coach, not a template builder</span><h1 className="font-display text-5xl leading-[1.02] tracking-[-.035em] md:text-7xl">Bring the experience.<br/><em className="font-normal text-[#1f6650]">We’ll find the story.</em></h1><p className="mt-6 max-w-xl text-base leading-7 text-ink/55">Two things in. A clear strategy, stronger resume and tailored cover letter out. No twelve-step form. No buzzword bingo.</p></div>
+      {user&&<div className="mb-5 flex flex-col justify-between gap-3 rounded-[22px] border border-black/[.07] bg-white/50 p-4 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-[.15em] text-[#1f6650]">Career profile</p><p className="mt-1 text-sm text-ink/45">Switch career directions without repasting your resume.</p></div><div className="flex flex-wrap gap-2"><select value={activeProfileId} onChange={e=>chooseProfile(e.target.value)} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm"><option value="">Unsaved profile</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}{p.target_role?` · ${p.target_role}`:""}</option>)}</select>{activeProfileId&&<button onClick={updateProfile} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold">Update profile</button>}<button onClick={()=>setProfileOpen(true)} className="rounded-full bg-[#18201d] px-4 py-2.5 text-xs font-semibold text-white">+ New profile</button></div></div>}
       <div className="grid gap-5 lg:grid-cols-2">
         <label className="group rounded-[28px] border border-black/[.07] bg-white/65 p-5 shadow-sm transition focus-within:-translate-y-1 focus-within:border-[#1f6650]/30 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-950/5"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">Your current resume</strong><small className="text-ink/35">Paste or upload</small></span><textarea value={resume} onChange={e=>setResume(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25" placeholder="Paste your resume here. Don’t clean it up first—we need to see the real starting point."/><span className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-black/15 px-4 py-3 text-xs text-ink/45 transition hover:border-[#1f6650] hover:text-[#1f6650]"><span>{extracting==="resume"?"Claude is reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"resume")}/></span></label>
         <label className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Paste or upload</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/><span className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-white/15 px-4 py-3 text-xs text-white/45 transition hover:border-[#98bfae] hover:text-[#98bfae]"><span>{extracting==="job"?"Claude is reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"job")}/></span></label>
