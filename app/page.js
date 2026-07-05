@@ -1,171 +1,50 @@
 "use client";
+import {useEffect,useMemo,useState} from "react";
+import {PRIORITIES,analyseCareerAnswers,analyseJobDescription,checkPositioningConfidence,extractHiddenStrengths,generateCoverLetter,generateEvidenceMap,generateResumeContent,generateWritersNotes,recommendResumeStrategy,rewriteResumeBullet} from "@/lib/ai-service";
 
-import { useState } from "react";
-import JobResumeForm from "@/components/JobResumeForm";
-import PositioningSliders from "@/components/PositioningSliders";
-import StrengthsChecklist from "@/components/StrengthsChecklist";
-import PositioningReport from "@/components/PositioningReport";
+const QUESTIONS=["Tell me about your current or most recent job.","What tasks do you usually do?","What are you proud of?","What problems have you solved?","What do coworkers or managers rely on you for?","Have you ever trained or helped someone?","Have you improved a process?","Have you created documentation?","Have you worked with customers, stakeholders or difficult situations?","What tools, systems or software have you used?","What skills do you want to highlight?","What do you want recruiters to remember about you?"];
+const STRATEGIES={"Technical Expert":"Lead with specialist knowledge and technical depth.","Results Driven":"Emphasise measurable outcomes and delivery.",Leader:"Show ownership, direction and influence.","People Person":"Lead with relationships and collaboration.","Problem Solver":"Show judgement, analysis and practical solutions.",Innovator:"Highlight new ideas and better ways of working.","Reliable Professional":"Present as dependable, careful and trusted.","Fast Learner":"Show adaptability and rapid growth.","Customer Focused":"Lead with service and customer outcomes.",Balanced:"Blend capability, outcomes and teamwork."};
+const PERCEPTION=["technically strong","reliable","ready for leadership","safe hire","innovative","calm under pressure","fast learner","strong communicator","commercially minded","adaptable"];
+const TEMPLATES=["ATS Simple","Professional","Technical","Graduate","Government"];
+const VERSIONS=["Technical Focus","Leadership Focus","People Focus","Results Focus","Balanced","ATS Optimised","Human Recruiter Friendly"];
+const REWRITES=["Make more technical","Make more leadership focused","Make more concise","Add measurable impact","Make more professional","Make more confident","Make less robotic","Make more ATS-friendly","Convert to Australian English"];
+const blankProfile={id:"",name:"",targetRole:"",workHistory:"",education:"",certifications:"",technicalSkills:[],softSkills:[],achievements:"",projects:"",strengths:[],tone:"Professional, confident, concise",positioning:"Balanced"};
+const steps=["Dashboard","Career profile","Career coach","Job description","Job analysis","Positioning","Evidence check","Generate","Documents"];
+const split=v=>v.split(",").map(x=>x.trim()).filter(Boolean);
 
-const DEFAULT_WEIGHTS = {
-  "Technical Skills": 50,
-  Leadership: 50,
-  Communication: 50,
-  Achievements: 50,
-};
+function Button({children,secondary=false,...props}){return <button {...props} className={`${secondary?"border border-line bg-white/50 text-ink":"bg-slate text-parchment"} px-4 py-2.5 font-mono text-xs uppercase tracking-wide transition hover:border-brass hover:bg-brass hover:text-white disabled:opacity-40`}>{children}</button>}
+function Card({title,eyebrow,children,className=""}){return <section className={`border border-line bg-white/55 p-5 md:p-6 ${className}`}>{eyebrow&&<p className="mb-2 font-mono text-[10px] uppercase tracking-[.18em] text-brass">{eyebrow}</p>}<h2 className="mb-4 font-display text-2xl">{title}</h2>{children}</section>}
+function Field({label,children}){return <label className="block"><span className="mb-1.5 block text-xs font-medium text-ink/60">{label}</span>{children}</label>}
+const input="w-full border border-line bg-white/70 px-3 py-2.5 text-sm outline-none focus:border-brass";
 
-export default function Home() {
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const [jobDescription, setJobDescription] = useState("");
-  const [resume, setResume] = useState("");
-  const [recommendation, setRecommendation] = useState("");
-  const [recommendedWeights, setRecommendedWeights] = useState(null);
-  const [weights, setWeights] = useState(DEFAULT_WEIGHTS);
-  const [strengths, setStrengths] = useState([]);
-
-  const [report, setReport] = useState(null);
-  const [finalResume, setFinalResume] = useState("");
-
-  async function handleAnalyze({ jobDescription: jd, resume: cv }) {
-    setLoading(true);
-    setError(null);
-    setJobDescription(jd);
-    setResume(cv);
-    try {
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobDescription: jd }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong.");
-
-      setRecommendedWeights(data.weights);
-      setWeights(data.weights);
-      setRecommendation(data.recommendation);
-      setStep(2);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleGenerate() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobDescription, resume, weights, strengths }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Something went wrong.");
-
-      setReport(data.report);
-      setFinalResume(data.resume);
-      setStep(3);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleDownload() {
-    const blob = new Blob([finalResume], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "resume.txt";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  return (
-    <main className="mx-auto max-w-5xl px-6 py-16">
-      <header className="mb-14 border-b border-line pb-8">
-        <p className="font-mono text-xs uppercase tracking-widest text-brass mb-3">ResumeCoach</p>
-        <h1 className="font-display text-4xl leading-tight text-ink max-w-2xl">
-          Most resume tools ask what you've done. This one asks who you're trying to be.
-        </h1>
-      </header>
-
-      {error && (
-        <div className="mb-8 border border-rust/40 bg-rust/5 px-4 py-3 text-sm text-rust">
-          {error}
-        </div>
-      )}
-
-      {step === 1 && <JobResumeForm onAnalyze={handleAnalyze} isLoading={loading} />}
-
-      {step === 2 && (
-        <div className="space-y-12">
-          <section>
-            <p className="font-mono text-xs uppercase tracking-wide text-slate/70 mb-2">
-              What this role values
-            </p>
-            <p className="text-ink/80 leading-relaxed max-w-2xl">{recommendation}</p>
-          </section>
-
-          <section>
-            <p className="font-mono text-xs uppercase tracking-wide text-slate/70 mb-4">
-              Adjust your positioning
-            </p>
-            <PositioningSliders weights={weights} onChange={setWeights} recommended={recommendedWeights} />
-          </section>
-
-          <section>
-            <p className="font-mono text-xs uppercase tracking-wide text-slate/70 mb-4">
-              How do you want to be remembered?
-            </p>
-            <StrengthsChecklist selected={strengths} onChange={setStrengths} />
-          </section>
-
-          <div className="flex justify-end border-t border-line pt-6">
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="bg-slate px-6 py-3 font-mono text-xs uppercase tracking-wide text-parchment transition hover:bg-ink disabled:opacity-40"
-            >
-              {loading ? "Writing your resume…" : "Generate positioned resume"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {step === 3 && (
-        <div className="space-y-10">
-          <PositioningReport report={report} />
-
-          <section>
-            <p className="font-mono text-xs uppercase tracking-wide text-slate/70 mb-4">
-              Your rewritten resume
-            </p>
-            <pre className="whitespace-pre-wrap border border-line bg-white/60 p-6 font-body text-sm leading-relaxed text-ink">
-              {finalResume}
-            </pre>
-          </section>
-
-          <div className="flex justify-between border-t border-line pt-6">
-            <button
-              onClick={() => setStep(2)}
-              className="font-mono text-xs uppercase tracking-wide text-slate/70 underline underline-offset-4"
-            >
-              ← Back to positioning
-            </button>
-            <button
-              onClick={handleDownload}
-              className="bg-brass px-6 py-3 font-mono text-xs uppercase tracking-wide text-parchment transition hover:bg-ink"
-            >
-              Download as .txt
-            </button>
-          </div>
-        </div>
-      )}
-    </main>
-  );
+export default function Home(){
+ const [step,setStep]=useState(0),[profiles,setProfiles]=useState([]),[documents,setDocuments]=useState([]),[profile,setProfile]=useState(blankProfile),[answers,setAnswers]=useState({}),[question,setQuestion]=useState(0),[job,setJob]=useState({title:"",company:"",text:""}),[analysis,setAnalysis]=useState(null),[strategy,setStrategy]=useState("Balanced"),[weights,setWeights]=useState(Object.fromEntries(PRIORITIES.map(k=>[k,50]))),[perception,setPerception]=useState([]),[template,setTemplate]=useState("ATS Simple"),[generated,setGenerated]=useState(null),[rewriteText,setRewriteText]=useState(""),[rewriteAction,setRewriteAction]=useState(REWRITES[0]),[ready,setReady]=useState(false);
+ useEffect(()=>{try{setProfiles(JSON.parse(localStorage.getItem("rc_profiles")||"[]"));setDocuments(JSON.parse(localStorage.getItem("rc_documents")||"[]"))}finally{setReady(true)}},[]);
+ useEffect(()=>{if(ready)localStorage.setItem("rc_profiles",JSON.stringify(profiles))},[profiles,ready]);useEffect(()=>{if(ready)localStorage.setItem("rc_documents",JSON.stringify(documents))},[documents,ready]);
+ const evidence=useMemo(()=>generateEvidenceMap(profile,answers),[profile,answers]);
+ const confidence=useMemo(()=>checkPositioningConfidence(strategy,evidence),[strategy,evidence]);
+ const discoveries=extractHiddenStrengths(answers[question]||"");
+ function saveProfile(){const next={...profile,id:profile.id||crypto.randomUUID()};setProfile(next);setProfiles(p=>[...p.filter(x=>x.id!==next.id),next]);setStep(2)}
+ function runAnalysis(){const result=analyseJobDescription(job.text);setAnalysis(result);setWeights(result.priorities);setStrategy(result.recommendedPositioning);setStep(4)}
+ function generate(version=""){const chosen=version?version.replace(" Focus",""):strategy;const resume=generateResumeContent({profile,strategy:chosen,perception,analysis,template});const coverLetter=generateCoverLetter({profile,job,strategy:chosen,analysis});const notes=generateWritersNotes({strategy:chosen,analysis});setGenerated({resume,coverLetter,notes,version:version||"Original"});setStep(7)}
+ function saveDocument(){const item={id:crypto.randomUUID(),profileId:profile.id,profileName:profile.name,job,strategy,template,...generated,createdAt:new Date().toISOString()};setDocuments(d=>[item,...d]);setStep(8)}
+ function startNew(){setProfile(profiles[0]||blankProfile);setAnswers({});setJob({title:"",company:"",text:""});setGenerated(null);setStep(profiles.length?3:1)}
+ function togglePerception(x){setPerception(p=>p.includes(x)?p.filter(v=>v!==x):p.length<3?[...p,x]:p)}
+ return <div className="min-h-screen">
+  <header className="border-b border-line bg-parchment/95"><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4"><button onClick={()=>setStep(0)} className="text-left"><span className="block font-mono text-[10px] uppercase tracking-[.22em] text-brass">ResumeCoach</span><span className="font-display text-xl">Write with strategy.</span></button><span className="hidden text-xs text-ink/50 sm:block">Your experience, positioned with purpose.</span></div></header>
+  <div className="mx-auto grid max-w-7xl gap-8 px-5 py-8 lg:grid-cols-[220px_1fr]">
+   <nav aria-label="Progress" className="lg:sticky lg:top-6 lg:self-start"><ol className="grid grid-cols-3 gap-1 lg:block">{steps.map((s,i)=><li key={s}><button onClick={()=>i<=step&&setStep(i)} className={`w-full border-l-2 px-3 py-2 text-left text-xs ${i===step?"border-brass bg-white/50 text-ink":"border-line text-ink/45"}`}><span className="mr-2 font-mono">{String(i+1).padStart(2,"0")}</span>{s}</button></li>)}</ol></nav>
+   <main>
+    {step===0&&<div className="space-y-6"><div className="flex flex-col justify-between gap-5 border-b border-line pb-8 md:flex-row md:items-end"><div><p className="mb-2 font-mono text-xs uppercase tracking-widest text-brass">Your career workspace</p><h1 className="max-w-2xl font-display text-4xl leading-tight md:text-5xl">Let’s discover your strengths—and make them impossible to miss.</h1></div><div className="flex gap-2"><Button secondary onClick={()=>{setProfile(blankProfile);setStep(1)}}>New profile</Button><Button onClick={startNew}>Start new resume</Button></div></div><div className="grid gap-5 md:grid-cols-3"><Card title="Career profiles" eyebrow={`${profiles.length} saved`}>{profiles.length?profiles.map(p=><button key={p.id} onClick={()=>{setProfile(p);setStep(1)}} className="mb-2 block w-full border-b border-line py-2 text-left"><strong>{p.name}</strong><span className="block text-xs text-ink/50">{p.targetRole}</span></button>):<p className="text-sm text-ink/55">Create a profile so your strongest evidence can be reused for every application.</p>}</Card><Card title="Saved resumes" eyebrow={`${documents.length} documents`}>{documents.filter(d=>d.resume).slice(0,4).map(d=><p key={d.id} className="border-b border-line py-2 text-sm">{d.job.title||"Untitled role"}<span className="block text-xs text-ink/45">{new Date(d.createdAt).toLocaleDateString("en-AU")}</span></p>)}{!documents.length&&<p className="text-sm text-ink/55">Your tailored resumes will appear here.</p>}</Card><Card title="Cover letters" eyebrow="Tailored writing">{documents.filter(d=>d.coverLetter).slice(0,4).map(d=><p key={d.id} className="border-b border-line py-2 text-sm">{d.job.company||d.job.title||"Application"}</p>)}{!documents.length&&<p className="text-sm text-ink/55">Cover letters stay linked to the strategy and job that shaped them.</p>}</Card></div></div>}
+    {step===1&&<Card title="Build your career profile" eyebrow="A reusable evidence bank"><p className="mb-6 max-w-2xl text-sm text-ink/60">You can create different profiles for different career directions—IT Support, Cyber Security, Administration, Graduate roles, and more.</p><div className="grid gap-4 md:grid-cols-2"><Field label="Profile name"><input className={input} value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})} placeholder="e.g. Cyber Security"/></Field><Field label="Target role"><input className={input} value={profile.targetRole} onChange={e=>setProfile({...profile,targetRole:e.target.value})}/></Field>{[["Work history","workHistory"],["Education","education"],["Certifications","certifications"],["Achievements","achievements"],["Projects","projects"]].map(([l,k])=><Field key={k} label={l}><textarea rows="4" className={input} value={profile[k]} onChange={e=>setProfile({...profile,[k]:e.target.value})}/></Field>)}<Field label="Technical skills (comma separated)"><input className={input} value={profile.technicalSkills.join(", ")} onChange={e=>setProfile({...profile,technicalSkills:split(e.target.value)})}/></Field><Field label="Soft skills (comma separated)"><input className={input} value={profile.softSkills.join(", ")} onChange={e=>setProfile({...profile,softSkills:split(e.target.value)})}/></Field><Field label="Preferred tone"><select className={input} value={profile.tone} onChange={e=>setProfile({...profile,tone:e.target.value})}><option>Professional, confident, concise</option><option>Warm and approachable</option><option>Direct and technical</option><option>Formal government style</option></select></Field><Field label="Preferred positioning"><select className={input} value={profile.positioning} onChange={e=>setProfile({...profile,positioning:e.target.value})}>{Object.keys(STRATEGIES).map(x=><option key={x}>{x}</option>)}</select></Field></div><div className="mt-6 flex justify-end"><Button disabled={!profile.name||!profile.targetRole} onClick={saveProfile}>Save and meet your coach</Button></div></Card>}
+    {step===2&&<div className="space-y-5"><Card title="Let’s discover your strengths" eyebrow={`Question ${question+1} of ${QUESTIONS.length}`}><div className="mb-4 h-1 bg-line"><div className="h-full bg-brass" style={{width:`${(question+1)/QUESTIONS.length*100}%`}}/></div><h3 className="mb-4 font-display text-2xl">{QUESTIONS[question]}</h3><textarea rows="7" className={input} value={answers[question]||""} onChange={e=>setAnswers({...answers,[question]:e.target.value})} placeholder="Answer naturally. You don’t need to make it sound impressive."/>{discoveries.length>0&&<div className="mt-4 border-l-2 border-moss bg-moss/5 p-4"><p className="font-medium text-moss">You may be underselling this experience.</p><p className="mt-1 text-sm text-ink/70">This can demonstrate {discoveries.join(", ")}.</p></div>}<div className="mt-6 flex justify-between"><Button secondary disabled={question===0} onClick={()=>setQuestion(q=>q-1)}>Previous</Button>{question<QUESTIONS.length-1?<Button onClick={()=>setQuestion(q=>q+1)}>Next question</Button>:<Button onClick={()=>{const r=analyseCareerAnswers(answers);setProfile(p=>({...p,strengths:r.hiddenStrengths}));setStep(3)}}>Use these strengths</Button>}</div></Card></div>}
+    {step===3&&<Card title="What role are we writing for?" eyebrow="Job description"><p className="mb-5 text-sm text-ink/60">Paste the full advertisement. Here’s how a recruiter may interpret it—and what your resume needs to prove.</p><div className="grid gap-4 md:grid-cols-2"><Field label="Job title"><input className={input} value={job.title} onChange={e=>setJob({...job,title:e.target.value})}/></Field><Field label="Company (optional)"><input className={input} value={job.company} onChange={e=>setJob({...job,company:e.target.value})}/></Field></div><Field label="Full job description"><textarea rows="14" className={`${input} mt-4`} value={job.text} onChange={e=>setJob({...job,text:e.target.value})}/></Field><div className="mt-5 flex justify-end"><Button disabled={job.text.trim().length<40} onClick={runAnalysis}>Analyse employer priorities</Button></div></Card>}
+    {step===4&&analysis&&<div className="space-y-5"><Card title="What this employer values" eyebrow="AI job analysis"><div className="grid gap-3 sm:grid-cols-2">{Object.entries(analysis.priorities).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k}><div className="mb-1 flex justify-between text-sm"><span>{k}</span><strong>{v}%</strong></div><div className="h-2 bg-line"><div className="h-full bg-brass" style={{width:`${v}%`}}/></div></div>)}</div></Card><div className="grid gap-5 md:grid-cols-2"><Card title="Skills and keywords"><p className="mb-2 text-xs uppercase text-ink/45">Required signals</p><div className="flex flex-wrap gap-2">{(analysis.requiredSkills.length?analysis.requiredSkills:["Role-specific evidence","Clear outcomes"]).map(x=><span key={x} className="border border-line bg-white px-2 py-1 text-xs">{x}</span>)}</div><p className="mb-2 mt-5 text-xs uppercase text-ink/45">Likely recruiter expectations</p><ul className="space-y-1 text-sm">{analysis.expectations.map(x=><li key={x}>— {x}</li>)}</ul></Card><Card title="Recommended positioning"><p className="font-display text-3xl text-brass">{analysis.recommendedPositioning}</p><p className="mt-3 text-sm text-ink/65">I recommend this strategy because it reflects the strongest signals in the advertisement while keeping the story focused.</p></Card></div><div className="flex justify-end"><Button onClick={()=>setStep(5)}>Choose positioning</Button></div></div>}
+    {step===5&&analysis&&<div className="space-y-5"><Card title="How do you want to be remembered?" eyebrow="Resume positioning strategy"><div className="grid gap-2 sm:grid-cols-2">{Object.entries(STRATEGIES).map(([k,v])=><button key={k} onClick={()=>setStrategy(k)} className={`border p-3 text-left ${strategy===k?"border-brass bg-brass/5":"border-line bg-white/40"}`}><strong className="block font-display text-lg">{k}</strong><span className="text-xs text-ink/55">{v}</span></button>)}</div><div className="mt-5 border-l-2 border-brass bg-white/60 p-4 text-sm">{recommendResumeStrategy(analysis,strategy)}</div></Card><Card title="Positioning balance" eyebrow="Use the recommendation or tune it yourself"><div className="mb-5"><Button secondary onClick={()=>setWeights(analysis.priorities)}>Use AI recommendation</Button></div><div className="grid gap-x-8 gap-y-4 md:grid-cols-2">{PRIORITIES.map(k=><label key={k}><span className="mb-1 flex justify-between text-xs"><span>{k}</span><strong>{weights[k]}%</strong></span><input type="range" min="0" max="100" className="w-full" value={weights[k]} onChange={e=>setWeights({...weights,[k]:Number(e.target.value)})}/></label>)}</div></Card><Card title="Professional perception" eyebrow="Choose exactly three"><p className="mb-4 text-sm text-ink/60">When a recruiter finishes reading your resume, what three things should they remember?</p><div className="flex flex-wrap gap-2">{PERCEPTION.map(x=><button key={x} disabled={!perception.includes(x)&&perception.length===3} onClick={()=>togglePerception(x)} className={`border px-3 py-2 text-sm ${perception.includes(x)?"border-slate bg-slate text-white":"border-line bg-white/50"} disabled:opacity-30`}>{x}</button>)}</div><div className="mt-6 flex justify-end"><Button disabled={perception.length!==3} onClick={()=>setStep(6)}>Check the evidence</Button></div></Card></div>}
+    {step===6&&analysis&&<div className="space-y-5"><div className="grid gap-5 md:grid-cols-2"><Card title="Evidence map" eyebrow="What your profile can prove">{Object.entries(evidence).sort((a,b)=>b[1]-a[1]).map(([k,v])=><div key={k} className="flex justify-between border-b border-line py-2 text-sm"><span>{k}</span><strong>{v} examples</strong></div>)}</Card><Card title={`${strategy}: ${confidence.confidence}%`} eyebrow="Positioning confidence"><div className="mb-4 h-3 bg-line"><div className={`h-full ${confidence.confidence>65?"bg-moss":"bg-rust"}`} style={{width:`${confidence.confidence}%`}}/></div><p className="text-sm text-ink/65">{confidence.reason}</p>{confidence.confidence<65&&<div className="mt-5 bg-rust/5 p-4"><strong className="text-sm">This resume would be stronger if I knew:</strong><ul className="mt-2 text-sm"><li>— Have you ever trained someone?</li><li>— Have you improved a process?</li><li>— Have you created documentation?</li><li>— Have you worked with stakeholders?</li></ul><Button secondary onClick={()=>setStep(2)}>Answer more questions</Button></div>}</Card></div><Card title="Strategy preview" eyebrow="Before we write"><dl className="grid gap-4 text-sm md:grid-cols-2"><div><dt className="text-ink/45">Primary positioning</dt><dd className="font-display text-xl">{strategy}</dd></div><div><dt className="text-ink/45">Secondary positioning</dt><dd className="font-display text-xl">{analysis.recommendedPositioning}</dd></div><div><dt className="text-ink/45">Supporting strengths</dt><dd>{perception.join(", ")}</dd></div><div><dt className="text-ink/45">Tone</dt><dd>{profile.tone}</dd></div><div><dt className="text-ink/45">Reduced emphasis</dt><dd>Unrelated duties and unsupported claims</dd></div><div><dt className="text-ink/45">Why</dt><dd>{recommendResumeStrategy(analysis,strategy)}</dd></div></dl><div className="mt-5 flex justify-end"><Button onClick={()=>generate()}>Generate resume and cover letter</Button></div></Card></div>}
+    {step===7&&generated&&<div className="space-y-5"><div className="flex flex-wrap gap-2">{VERSIONS.map(x=><Button key={x} secondary onClick={()=>generate(x)}>{x}</Button>)}</div><Card title={`Resume — ${generated.version}`} eyebrow={`${template} template`}><div className="mb-4 flex flex-wrap gap-2">{TEMPLATES.map(x=><button key={x} onClick={()=>setTemplate(x)} className={`border px-2 py-1 text-xs ${template===x?"border-brass text-brass":"border-line"}`}>{x}</button>)}</div><pre className="max-h-[650px] overflow-auto whitespace-pre-wrap border border-line bg-white p-5 font-body text-sm leading-relaxed">{generated.resume}</pre></Card><Card title="Smart rewrite tools" eyebrow="Improve one bullet without losing your voice"><textarea className={input} rows="3" value={rewriteText} onChange={e=>setRewriteText(e.target.value)} placeholder="Paste a bullet or sentence here"/><div className="mt-3 flex flex-col gap-2 sm:flex-row"><select className={input} value={rewriteAction} onChange={e=>setRewriteAction(e.target.value)}>{REWRITES.map(x=><option key={x}>{x}</option>)}</select><Button onClick={()=>setRewriteText(rewriteResumeBullet(rewriteText,rewriteAction))}>Rewrite</Button></div></Card><Card title="Tailored cover letter" eyebrow="Authentic and role-specific"><pre className="whitespace-pre-wrap bg-white p-5 font-body text-sm leading-relaxed">{generated.coverLetter}</pre></Card><Card title="Writer’s notes" eyebrow="Why I wrote it this way"><p className="leading-relaxed text-ink/70">{generated.notes}</p><div className="mt-6 flex justify-end"><Button onClick={saveDocument}>Save documents</Button></div></Card></div>}
+    {step===8&&<div className="space-y-5"><div className="flex items-end justify-between border-b border-line pb-5"><div><p className="font-mono text-xs uppercase tracking-widest text-brass">Saved documents</p><h1 className="font-display text-4xl">Your writing library</h1></div><Button onClick={startNew}>Start another resume</Button></div>{documents.map(d=><Card key={d.id} title={d.job.title||"Untitled application"} eyebrow={new Date(d.createdAt).toLocaleDateString("en-AU")}><p className="text-sm"><strong>{d.profileName}</strong> · {d.strategy} · {d.template}</p><details className="mt-4"><summary className="cursor-pointer text-sm text-brass">View resume</summary><pre className="mt-3 whitespace-pre-wrap bg-white p-4 text-sm">{d.resume}</pre></details><details className="mt-2"><summary className="cursor-pointer text-sm text-brass">View cover letter and writer’s notes</summary><pre className="mt-3 whitespace-pre-wrap bg-white p-4 text-sm">{d.coverLetter}\n\nWRITER’S NOTES\n{d.notes}</pre></details></Card>)}{!documents.length&&<p>No saved documents yet.</p>}</div>}
+   </main>
+  </div>
+ </div>
 }
