@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const positionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
 
@@ -28,11 +29,19 @@ export default function CoachExperience() {
   const [documents, setDocuments] = useState(null);
   const [tab, setTab] = useState("resume");
   const [error, setError] = useState("");
+  const [user, setUser] = useState(null);
+  const [extracting, setExtracting] = useState("");
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfileId, setActiveProfileId] = useState("");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileRole, setProfileRole] = useState("");
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
     if (draft) { try { const parsed = JSON.parse(draft); setResume(parsed.resume || ""); setJobDescription(parsed.jobDescription || ""); } catch {} }
   }, []);
+  useEffect(() => { if(process.env.NEXT_PUBLIC_SUPABASE_URL) createClient().auth.getUser().then(({data})=>{setUser(data.user);if(data.user)fetch("/api/profiles").then(r=>r.json()).then(rows=>Array.isArray(rows)&&setProfiles(rows));}); }, []);
   useEffect(() => { localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })); }, [resume, jobDescription]);
 
   async function callCoach(action, payload) {
@@ -41,6 +50,28 @@ export default function CoachExperience() {
     if (!response.ok) throw new Error(data.error || "The coach could not respond just now.");
     return data;
   }
+
+  async function uploadFile(file, target) {
+    if (!file) return;
+    setError(""); setExtracting(target);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      const response = await fetch("/api/extract", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({data:btoa(binary),mediaType:file.type,fileName:file.name}) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "That file could not be read.");
+      if (target === "resume") setResume(result.text); else setJobDescription(result.text);
+    } catch (e) { setError(e.message); } finally { setExtracting(""); }
+  }
+
+  function chooseProfile(id) { const selected=profiles.find(p=>p.id===id);setActiveProfileId(id);if(selected)setResume(selected.resume_text||""); }
+  async function createProfile() { const response=await fetch("/api/profiles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:profileName,targetRole:profileRole,resume})});const result=await response.json();if(!response.ok){setError(result.error);return}setProfiles([result,...profiles]);setActiveProfileId(result.id);setProfileOpen(false);setProfileName("");setProfileRole(""); }
+  async function updateProfile() { const selected=profiles.find(p=>p.id===activeProfileId);if(!selected)return;const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:selected.id,name:selected.name,targetRole:selected.target_role,resume})});const result=await response.json();if(response.ok)setProfiles(profiles.map(p=>p.id===result.id?result:p));else setError(result.error); }
+
+  function saveBlob(blob, name) { const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+  async function downloadWord() { const {Document,Packer,Paragraph,TextRun}=await import("docx");const paragraphs=documents.resume.split("\n").map((line,index)=>new Paragraph({children:[new TextRun({text:line,bold:index<2||/^[A-Z][A-Z ]+$/.test(line)})],spacing:{after:line?100:40}}));const blob=await Packer.toBlob(new Document({sections:[{properties:{},children:paragraphs}]}));saveBlob(blob,"ResumeCoach-resume.docx"); }
+  async function downloadPdf() { const {jsPDF}=await import("jspdf");const pdf=new jsPDF({unit:"pt",format:"a4"});const lines=pdf.splitTextToSize(documents.resume,495);let y=55;for(const line of lines){if(y>790){pdf.addPage();y=55}pdf.text(line,50,y);y+=15}pdf.save("ResumeCoach-resume.pdf"); }
 
   async function begin() {
     setError(""); setStage("analysing");
@@ -64,6 +95,7 @@ export default function CoachExperience() {
     try {
       const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning });
       setDocuments(data); setStage("result"); localStorage.setItem("resumecoach_latest", JSON.stringify(data));
+      fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription,analysis,answers,positioning,documents:data})}).catch(()=>{});
     } catch (e) { setError(e.message); setStage("strategy"); }
   }
 
@@ -71,15 +103,18 @@ export default function CoachExperience() {
   const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
 
   return <main className="min-h-screen bg-[#f4f2eb] text-ink">
-    <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">Private by default</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span></div></div></header>
+    <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">{user?.email||"Private by default"}</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span>{user&&<button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="ml-2 underline underline-offset-4">Sign out</button>}</div></div></header>
 
     {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
 
+    {profileOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#18201d]/35 p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-[#f4f2eb] p-7 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">New career profile</p><h2 className="mt-2 font-display text-3xl">Save this career direction.</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep separate source resumes for different roles without mixing their stories.</p><label className="mt-6 block text-xs text-ink/50">Profile name<input autoFocus value={profileName} onChange={e=>setProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]" placeholder="e.g. Cyber Security"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input value={profileRole} onChange={e=>setProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]" placeholder="e.g. GRC Analyst"/></label><div className="mt-6 flex justify-end gap-2"><button onClick={()=>setProfileOpen(false)} className="rounded-full px-5 py-3 text-sm text-ink/50">Cancel</button><button disabled={!profileName.trim()} onClick={createProfile} className="rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white disabled:opacity-30">Create profile</button></div></div></div>}
+
     {stage === "input" && <div className="mx-auto max-w-6xl px-5 py-12 md:py-20">
       <div className="mb-12 max-w-3xl"><span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#1f6650]/15 bg-[#dfece6] px-3 py-1.5 text-xs font-medium text-[#1f6650]">✦ A resume coach, not a template builder</span><h1 className="font-display text-5xl leading-[1.02] tracking-[-.035em] md:text-7xl">Bring the experience.<br/><em className="font-normal text-[#1f6650]">We’ll find the story.</em></h1><p className="mt-6 max-w-xl text-base leading-7 text-ink/55">Two things in. A clear strategy, stronger resume and tailored cover letter out. No twelve-step form. No buzzword bingo.</p></div>
+      {user&&<div className="mb-5 flex flex-col justify-between gap-3 rounded-[22px] border border-black/[.07] bg-white/50 p-4 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-[.15em] text-[#1f6650]">Career profile</p><p className="mt-1 text-sm text-ink/45">Switch career directions without repasting your resume.</p></div><div className="flex flex-wrap gap-2"><select value={activeProfileId} onChange={e=>chooseProfile(e.target.value)} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm"><option value="">Unsaved profile</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}{p.target_role?` · ${p.target_role}`:""}</option>)}</select>{activeProfileId&&<button onClick={updateProfile} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold">Update profile</button>}<button onClick={()=>setProfileOpen(true)} className="rounded-full bg-[#18201d] px-4 py-2.5 text-xs font-semibold text-white">+ New profile</button></div></div>}
       <div className="grid gap-5 lg:grid-cols-2">
-        <label className="group rounded-[28px] border border-black/[.07] bg-white/65 p-5 shadow-sm transition focus-within:-translate-y-1 focus-within:border-[#1f6650]/30 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-950/5"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">Your current resume</strong><small className="text-ink/35">Plain text is perfect</small></span><textarea value={resume} onChange={e=>setResume(e.target.value)} rows="15" className="w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25" placeholder="Paste your resume here. Don’t clean it up first—we need to see the real starting point."/></label>
-        <label className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Full job ad</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="15" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/></label>
+        <label className="group rounded-[28px] border border-black/[.07] bg-white/65 p-5 shadow-sm transition focus-within:-translate-y-1 focus-within:border-[#1f6650]/30 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-950/5"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">Your current resume</strong><small className="text-ink/35">Paste or upload</small></span><textarea value={resume} onChange={e=>setResume(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25" placeholder="Paste your resume here. Don’t clean it up first—we need to see the real starting point."/><span className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-black/15 px-4 py-3 text-xs text-ink/45 transition hover:border-[#1f6650] hover:text-[#1f6650]"><span>{extracting==="resume"?"Claude is reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"resume")}/></span></label>
+        <label className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Paste or upload</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/><span className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-white/15 px-4 py-3 text-xs text-white/45 transition hover:border-[#98bfae] hover:text-[#98bfae]"><span>{extracting==="job"?"Claude is reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"job")}/></span></label>
       </div>
       <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><p className="text-xs text-ink/40">Your draft stays in this browser. Generated content is grounded in what you provide.</p><button disabled={!canBegin} onClick={begin} className="group rounded-full bg-[#1f6650] px-7 py-4 text-sm font-semibold text-white shadow-xl shadow-emerald-900/15 transition hover:-translate-y-1 hover:bg-[#174f3f] disabled:translate-y-0 disabled:opacity-30">Find my strongest angle <span className="ml-2 inline-block transition group-hover:translate-x-1">→</span></button></div>
     </div>}
@@ -103,7 +138,7 @@ export default function CoachExperience() {
     {stage === "result" && documents && <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
       <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your application is ready</span><h1 className="mt-2 font-display text-5xl">Strong, specific, still you.</h1></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],["coverLetter","Cover letter"],["writersNotes","Coach’s notes"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
-      <div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-4"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button><button onClick={()=>{const blob=new Blob([documents[tab]],{type:"text/plain"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`resumecoach-${tab}.txt`;a.click()}} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download</button></aside></div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>{tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}<button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button></aside></div>
     </div>}
   </main>;
 }
