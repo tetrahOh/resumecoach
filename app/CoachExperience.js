@@ -39,6 +39,11 @@ export default function CoachExperience() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileNotice, setProfileNotice] = useState("");
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewEditing, setReviewEditing] = useState(false);
+  const [reviewInstruction, setReviewInstruction] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewMessage, setReviewMessage] = useState("");
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
@@ -130,7 +135,7 @@ export default function CoachExperience() {
     setError(""); setStage("generating");
     try {
       const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning });
-      setDocuments(data); setStage("result"); localStorage.setItem("resumecoach_latest", JSON.stringify(data));
+      setDocuments(data);setTab("resume");setReviewIndex(0);setReviewEditing(false);setReviewInstruction("");setReviewMessage("");setStage("result");localStorage.setItem("resumecoach_latest", JSON.stringify(data));
       try {
         const response=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription,analysis,answers,positioning,documents:data})});
         const result=await response.json().catch(() => ({}));
@@ -139,8 +144,30 @@ export default function CoachExperience() {
     } catch (e) { setError(e.message); setStage("strategy"); }
   }
 
+  function advanceReview() {
+    const sections=documents?.reviewSections||[];
+    setReviewMessage("");setReviewEditing(false);setReviewInstruction("");
+    if(reviewIndex<sections.length-1)setReviewIndex(reviewIndex+1);
+    else setReviewMessage("Review complete — your resume is ready to download or edit further.");
+  }
+
+  async function reviseReviewSection() {
+    const section=documents?.reviewSections?.[reviewIndex];
+    if(!section||!reviewInstruction.trim())return;
+    setReviewSaving(true);setReviewMessage("");setError("");
+    try {
+      const revised=await callCoach("reviseSection",{resume:documents.resume,jobDescription,positioning,section,instruction:reviewInstruction});
+      const reviewSections=documents.reviewSections.map((item,index)=>index===reviewIndex?{...item,content:revised.content,rationale:revised.rationale}:item);
+      const updatedResume=documents.resume.includes(section.content)?documents.resume.replace(section.content,revised.content):documents.resume;
+      const updated={...documents,resume:updatedResume,reviewSections};
+      setDocuments(updated);localStorage.setItem("resumecoach_latest",JSON.stringify(updated));setReviewInstruction("");setReviewEditing(false);setReviewMessage("Section updated. Review the change, then continue when it feels right.");
+    } catch(e) { setError(e.message); } finally { setReviewSaving(false); }
+  }
+
   const canBegin = resume.trim().length > 80 && jobDescription.trim().length > 80;
   const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
+  const reviewSections = documents?.reviewSections || [];
+  const reviewSection = reviewSections[reviewIndex];
 
   return <main className="min-h-screen bg-[#f4f2eb] text-ink">
     <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><div className="flex items-center gap-3 text-xs text-ink/45"><span className="hidden sm:inline">{user?.email||"Private by default"}</span><span className="h-1.5 w-1.5 rounded-full bg-emerald-600"/><span>Claude-powered</span>{user&&<button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="ml-2 underline underline-offset-4">Sign out</button>}</div></div></header>
@@ -183,8 +210,14 @@ export default function CoachExperience() {
 
     {stage === "result" && documents && <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
       <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your application is ready</span><h1 className="mt-2 font-display text-5xl">Strong, specific, still you.</h1></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],["coverLetter","Cover letter"],["writersNotes","Coach’s notes"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
-      <div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>{tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}<button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button></aside></div>
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],["coverLetter","Cover letter"],["coachAdvice","Coach advice"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
+      {tab!=="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>{tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}<button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button></aside></div>}
+      {tab==="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_300px]">
+        <section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9">
+          {reviewSection?<><div className="flex items-center justify-between gap-4"><span className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Section {reviewIndex+1} of {reviewSections.length}</span><span className="text-xs text-ink/35">{Math.round(((reviewIndex+1)/reviewSections.length)*100)}% reviewed</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-[#1f6650] transition-all duration-500" style={{width:`${((reviewIndex+1)/reviewSections.length)*100}%`}}/></div><h2 className="mt-7 font-display text-4xl">{reviewSection.title}</h2><div className="mt-5 rounded-[22px] bg-[#dfece6] p-5"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Why I wrote it this way</p><p className="mt-3 text-sm leading-7 text-ink/70">{reviewSection.rationale}</p></div><div className="mt-5 rounded-[22px] border border-black/[.07] bg-[#f4f2eb]/60 p-5"><p className="mb-3 text-xs font-semibold uppercase tracking-widest text-ink/35">Resume section</p><pre className="whitespace-pre-wrap font-body text-sm leading-7 text-ink/75">{reviewSection.content}</pre></div>{reviewMessage&&<p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{reviewMessage}</p>}{reviewEditing?<div className="mt-5 rounded-[22px] border border-[#1f6650]/20 bg-white p-4"><label className="text-xs font-semibold text-[#1f6650]">What would you like changed?</label><textarea autoFocus value={reviewInstruction} onChange={e=>setReviewInstruction(e.target.value)} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-[#f4f2eb] p-3 text-sm leading-6 outline-none" placeholder="e.g. Make this warmer, lead with leadership, shorten it, or emphasise a specific achievement…"/><div className="mt-3 flex justify-end gap-2"><button disabled={reviewSaving} onClick={()=>{setReviewEditing(false);setReviewInstruction("")}} className="rounded-full px-4 py-2 text-xs text-ink/45">Cancel</button><button disabled={!reviewInstruction.trim()||reviewSaving} onClick={reviseReviewSection} className="rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white disabled:opacity-30">{reviewSaving?"Rewriting this section…":"Update this section"}</button></div></div>:<div className="mt-6 flex flex-col gap-3 sm:flex-row"><button onClick={advanceReview} className="flex-1 rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white">{reviewIndex===reviewSections.length-1?"Looks good — finish review":"Looks good — next section →"}</button><button onClick={()=>{setReviewEditing(true);setReviewMessage("")}} className="flex-1 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink/65">I’d like a change</button></div>}</>:<div><h2 className="font-display text-3xl">Overall coach advice</h2><p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-ink/65">{documents.writersNotes}</p></div>}
+        </section>
+        <aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Your review</p><p className="mt-3 text-sm leading-6 text-white/60">Work through one section at a time. Accept the coaching decision or ask for a precise change without rewriting the rest of your resume.</p></div>{reviewIndex>0&&<button onClick={()=>{setReviewIndex(reviewIndex-1);setReviewEditing(false);setReviewMessage("")}} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold">← Previous section</button>}<div className="rounded-[24px] border border-black/[.07] bg-white/60 p-5"><p className="text-xs uppercase tracking-widest text-ink/35">Overall advice</p><p className="mt-3 whitespace-pre-wrap text-xs leading-6 text-ink/55">{documents.writersNotes}</p></div></aside>
+      </div>}
     </div>}
   </main>;
 }
