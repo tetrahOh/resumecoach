@@ -57,9 +57,9 @@ export async function POST(request) {
     const body = await request.json();
     if (body.action === "analyse") {
       if ((body.resume||"").length < 80 || (body.jobDescription||"").length < 80) return NextResponse.json({error:"Please paste both your current resume and the full job description."},{status:400});
-      return NextResponse.json(await askClaude(ANALYSE,{resume:body.resume,jobDescription:body.jobDescription},ANALYSIS_SCHEMA,2200));
+      return NextResponse.json(await askClaude(ANALYSE,{resume:body.resume,jobDescription:body.jobDescription,personalDetails:body.personalDetails},ANALYSIS_SCHEMA,2200));
     }
-    if (body.action === "generate") return NextResponse.json(await askClaude(GENERATE,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,followUpAnswers:body.answers,chosenPositioning:body.positioning,acceptedRecommendations:body.acceptedRecommendations||[],declinedRecommendations:body.declinedRecommendations||[]},DOCUMENT_SCHEMA,6500));
+    if (body.action === "generate") return NextResponse.json(await askClaude(GENERATE,{resume:body.resume,jobDescription:body.jobDescription,personalDetails:body.personalDetails,analysis:body.analysis,followUpAnswers:body.answers,chosenPositioning:body.positioning,acceptedRecommendations:body.acceptedRecommendations||[],declinedRecommendations:body.declinedRecommendations||[]},DOCUMENT_SCHEMA,6500));
     if (body.action === "followUp") {
       const asked=(body.answers||[]).map(item=>item.question).filter(Boolean);
       let result=await askClaude(FOLLOW_UP,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,answers:body.answers,questionsAlreadyAsked:asked},FOLLOW_UP_SCHEMA,900);
