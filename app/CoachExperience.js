@@ -126,13 +126,14 @@ export default function CoachExperience() {
 
   async function submitAnswer() {
     if (!answer.trim()||consultationLoading) return;
-    const next = [...answers, { question: analysis.questions[questionIndex], answer: answer.trim() }];
-    setAnswers(next);setAnswer("");setConsultationLoading(true);setError("");
+    const submittedAnswer=answer.trim();
+    const next = [...answers, { question: analysis.questions[questionIndex], answer: submittedAnswer }];
+    setAnswers(next);setConsultationLoading(true);setError("");
     try {
       const result=await callCoach("followUp",{resume,jobDescription,analysis,answers:next});
       if(result.complete||!result.nextQuestion?.trim()||next.length>=8)setStage("strategy");
-      else { setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
-    } catch(e) { setError(e.message);setAnswer(next[next.length-1].answer);setAnswers(next.slice(0,-1)); }
+      else { setAnswer("");setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
+    } catch(e) { setError(e.message);setAnswer(submittedAnswer);setAnswers(next.slice(0,-1)); }
     finally { setConsultationLoading(false); }
   }
 
@@ -203,7 +204,7 @@ export default function CoachExperience() {
       <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div>
       <section key={questionIndex} className="rounded-[30px] border border-black/[.07] bg-white/80 p-5 shadow-xl shadow-black/[.03] md:p-7">
         <div className="flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="min-w-0 flex-1"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="min-h-[84px] font-display text-3xl leading-tight">{analysis.questions[questionIndex]}</h2><p className="mt-3 text-sm leading-6 text-ink/45">Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy.</p></div></div>
-        <div className="mt-6 rounded-[22px] border border-black/[.08] bg-[#f4f2eb]/70 p-3 focus-within:border-[#1f6650]/40 focus-within:bg-white"><textarea key={`answer-${questionIndex}`} autoFocus disabled={consultationLoading} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none disabled:opacity-50" placeholder="Type your answer…"/><div className="flex items-center justify-between gap-3"><span className="text-[11px] text-ink/30">{consultationLoading?"Claude is checking whether another question is needed…":"Enter to continue · Shift + Enter for a new line"}</span><button onClick={submitAnswer} disabled={!answer.trim()||consultationLoading} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">{consultationLoading?"Reviewing…":"Continue →"}</button></div></div>
+        <div className={`mt-6 rounded-[22px] border p-3 transition ${consultationLoading?"border-[#1f6650]/20 bg-[#dfece6]/60":"border-black/[.08] bg-[#f4f2eb]/70 focus-within:border-[#1f6650]/40 focus-within:bg-white"}`}><textarea key={`answer-${questionIndex}`} autoFocus disabled={consultationLoading} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none disabled:text-ink/60 disabled:opacity-100" placeholder="Type your answer…"/><div className="flex items-center justify-between gap-3"><span className={`text-[11px] ${consultationLoading?"font-medium text-[#1f6650]":"text-ink/30"}`}>{consultationLoading?"✓ Answer submitted — checking for any remaining evidence gaps…":"Enter to continue · Shift + Enter for a new line"}</span><button onClick={submitAnswer} disabled={!answer.trim()||consultationLoading} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">{consultationLoading?"Reviewing…":"Continue →"}</button></div></div>
       </section>
       {answers.length>0&&<p className="mt-4 text-center text-xs text-[#1f6650]">✓ {answers.length} {answers.length===1?"insight":"insights"} captured</p>}
     </div>}
