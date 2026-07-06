@@ -23,6 +23,22 @@ async function askClaude(system, payload, schema, maxTokens = 2500) {
   throw new Error("Claude did not return a complete document. Please try again.");
 }
 
+function questionWords(value="") {
+  const ignored=new Set(["a","an","and","are","can","did","do","for","have","how","in","is","it","of","on","or","that","the","this","to","was","what","when","where","which","with","you","your"]);
+  return new Set(value.toLowerCase().replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter(word=>word.length>2&&!ignored.has(word)));
+}
+
+function isRepeatedQuestion(candidate, asked=[]) {
+  const candidateWords=questionWords(candidate);
+  if(!candidateWords.size)return true;
+  return asked.some(question=>{
+    const previousWords=questionWords(question);
+    const shared=[...candidateWords].filter(word=>previousWords.has(word)).length;
+    const smaller=Math.min(candidateWords.size,previousWords.size);
+    return smaller>0&&shared/smaller>=0.7;
+  });
+}
+
 const POSITIONING_OPTION_SCHEMA={type:"object",additionalProperties:false,required:["label","reason","evidence"],properties:{label:{type:"string"},reason:{type:"string"},evidence:{type:"array",items:{type:"string"}}}};
 const ANALYSIS_SCHEMA={type:"object",additionalProperties:false,required:["jobTitle","company","summary","priorities","keywords","evidence","gaps","positioningOptions","recommendedPositioning","strategyReason","coachingNote","questions"],properties:{jobTitle:{type:"string"},company:{type:"string"},summary:{type:"string"},priorities:{type:"object",additionalProperties:false,required:["Technical expertise","Problem solving","Communication","Leadership","Business impact"],properties:{"Technical expertise":{type:"integer",minimum:0,maximum:100},"Problem solving":{type:"integer",minimum:0,maximum:100},Communication:{type:"integer",minimum:0,maximum:100},Leadership:{type:"integer",minimum:0,maximum:100},"Business impact":{type:"integer",minimum:0,maximum:100}}},keywords:{type:"array",items:{type:"string"}},evidence:{type:"array",items:{type:"string"}},gaps:{type:"array",items:{type:"string"}},positioningOptions:{type:"array",minItems:3,maxItems:6,items:POSITIONING_OPTION_SCHEMA},recommendedPositioning:{type:"string"},strategyReason:{type:"string"},coachingNote:{type:"string"},questions:{type:"array",maxItems:1,items:{type:"string"}}}};
 const FOLLOW_UP_SCHEMA={type:"object",additionalProperties:false,required:["complete","nextQuestion","reason"],properties:{complete:{type:"boolean"},nextQuestion:{type:"string"},reason:{type:"string"}}};
@@ -43,7 +59,16 @@ export async function POST(request) {
       return NextResponse.json(await askClaude(ANALYSE,{resume:body.resume,jobDescription:body.jobDescription},ANALYSIS_SCHEMA,2200));
     }
     if (body.action === "generate") return NextResponse.json(await askClaude(GENERATE,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,followUpAnswers:body.answers,chosenPositioning:body.positioning},DOCUMENT_SCHEMA,6500));
-    if (body.action === "followUp") return NextResponse.json(await askClaude(FOLLOW_UP,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,answers:body.answers},FOLLOW_UP_SCHEMA,900));
+    if (body.action === "followUp") {
+      const asked=(body.answers||[]).map(item=>item.question).filter(Boolean);
+      let result=await askClaude(FOLLOW_UP,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,answers:body.answers,questionsAlreadyAsked:asked},FOLLOW_UP_SCHEMA,900);
+      if(!result.complete&&isRepeatedQuestion(result.nextQuestion,asked)) {
+        const rejectedQuestion=result.nextQuestion;
+        result=await askClaude(FOLLOW_UP,{resume:body.resume,jobDescription:body.jobDescription,analysis:body.analysis,answers:body.answers,questionsAlreadyAsked:asked,rejectedDuplicate:rejectedQuestion,instruction:"Choose a materially different evidence gap. If none remains, end the consultation."},FOLLOW_UP_SCHEMA,900);
+        if(!result.complete&&isRepeatedQuestion(result.nextQuestion,asked))result={complete:true,nextQuestion:"",reason:"No materially different evidence gap remains."};
+      }
+      return NextResponse.json(result);
+    }
     if (body.action === "reviseSection") {
       if (!body.section?.content || !body.instruction?.trim()) return NextResponse.json({error:"Tell the coach what you want changed in this section."},{status:400});
       return NextResponse.json(await askClaude(REVISE_SECTION,{fullResume:body.resume,targetRole:body.jobDescription,chosenPositioning:body.positioning,section:body.section,userRequest:body.instruction},REVISION_SCHEMA,2200));
