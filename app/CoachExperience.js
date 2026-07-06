@@ -128,7 +128,22 @@ export default function CoachExperience() {
     } catch (e) { setError(e.message); } finally { setExtracting(""); }
   }
 
-  function chooseProfile(id) {
+  function profileWorkspaceData() {
+    const savedStage=["analysing","generating"].includes(stage)?"input":stage;
+    return {analysis,answers,questionIndex,positioning,documents,recommendationChoices,reviewStatuses,stage:savedStage};
+  }
+
+  async function persistActiveProfile() {
+    if(!activeProfileId)return;
+    const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:activeProfileId,resume,jobDescription,workspaceData:profileWorkspaceData()})});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(result.error||"Your profile session could not be saved.");
+    setProfiles(current=>current.map(profile=>profile.id===result.id?result:profile));
+  }
+
+  async function chooseProfile(id) {
+    if(id===activeProfileId)return;
+    try { await persistActiveProfile(); } catch(e) { setError(e.message); return; }
     const selected=profiles.find(p=>p.id===id);
     const workspace=selected?.workspace_data||{};
     setActiveProfileId(id);setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
