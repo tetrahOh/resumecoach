@@ -10,7 +10,7 @@ async function currentUser() {
 export async function GET() {
   const { supabase, user } = await currentUser();
   if (!user) return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
-  const { data, error } = await supabase.from("profiles").select("full_name,phone,location,linkedin_url,website_url").eq("id", user.id).maybeSingle();
+  const { data, error } = await supabase.from("profiles").select("full_name,phone").eq("id", user.id).maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ email: user.email, ...(data || {}) });
 }
@@ -23,12 +23,9 @@ export async function PATCH(request) {
     id: user.id,
     full_name: body.fullName?.trim() || null,
     phone: body.phone?.trim() || null,
-    location: body.location?.trim() || null,
-    linkedin_url: body.linkedinUrl?.trim() || null,
-    website_url: body.websiteUrl?.trim() || null,
     updated_at: new Date().toISOString()
   };
-  const { data, error } = await supabase.from("profiles").upsert(details).select("full_name,phone,location,linkedin_url,website_url").single();
+  const { data, error } = await supabase.from("profiles").upsert(details).select("full_name,phone").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ email: user.email, ...data });
 }
