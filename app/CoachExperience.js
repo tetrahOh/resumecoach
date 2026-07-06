@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-const positionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
+const fallbackPositionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
 
 function Logo() {
   return <button onClick={() => location.reload()} className="flex items-center gap-3 text-left"><span className="grid h-10 w-10 place-items-center rounded-2xl bg-[#18201d] text-lg text-white shadow-lg shadow-emerald-950/10">R</span><span><strong className="block font-display text-lg leading-none">ResumeCoach</strong><small className="text-[11px] text-ink/45">Your story, positioned well.</small></span></button>;
@@ -25,6 +25,7 @@ export default function CoachExperience() {
   const [answers, setAnswers] = useState([]);
   const [answer, setAnswer] = useState("");
   const [questionIndex, setQuestionIndex] = useState(0);
+  const [consultationLoading, setConsultationLoading] = useState(false);
   const [positioning, setPositioning] = useState("Problem solver");
   const [documents, setDocuments] = useState(null);
   const [tab, setTab] = useState("resume");
@@ -115,7 +116,7 @@ export default function CoachExperience() {
   async function downloadPdf() { const {jsPDF}=await import("jspdf");const pdf=new jsPDF({unit:"pt",format:"a4"});const lines=pdf.splitTextToSize(documents.resume,495);let y=55;for(const line of lines){if(y>790){pdf.addPage();y=55}pdf.text(line,50,y);y+=15}pdf.save("ResumeCoach-resume.pdf"); }
 
   async function begin() {
-    setError(""); setStage("analysing");
+    setError("");setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setStage("analysing");
     try {
       const data = await callCoach("analyse", { resume, jobDescription });
       setAnalysis(data); setPositioning(data.recommendedPositioning || "Problem solver");
@@ -123,12 +124,16 @@ export default function CoachExperience() {
     } catch (e) { setError(e.message); setStage("input"); }
   }
 
-  function submitAnswer() {
-    if (!answer.trim()) return;
+  async function submitAnswer() {
+    if (!answer.trim()||consultationLoading) return;
     const next = [...answers, { question: analysis.questions[questionIndex], answer: answer.trim() }];
-    setAnswers(next); setAnswer("");
-    if (questionIndex + 1 < analysis.questions.length) setQuestionIndex(questionIndex + 1);
-    else setStage("strategy");
+    setAnswers(next);setAnswer("");setConsultationLoading(true);setError("");
+    try {
+      const result=await callCoach("followUp",{resume,jobDescription,analysis,answers:next});
+      if(result.complete||!result.nextQuestion?.trim()||next.length>=8)setStage("strategy");
+      else { setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
+    } catch(e) { setError(e.message);setAnswer(next[next.length-1].answer);setAnswers(next.slice(0,-1)); }
+    finally { setConsultationLoading(false); }
   }
 
   async function generate() {
@@ -166,6 +171,8 @@ export default function CoachExperience() {
 
   const canBegin = resume.trim().length > 80 && jobDescription.trim().length > 80;
   const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
+  const positioningOptions = analysis?.positioningOptions?.length ? analysis.positioningOptions : fallbackPositionOptions.map(label=>({label,reason:"A credible way to frame the evidence in your experience.",evidence:[]}));
+  const selectedPositioning = positioningOptions.find(option=>option.label===positioning) || positioningOptions[0];
   const reviewSections = documents?.reviewSections || [];
   const reviewSection = reviewSections[reviewIndex];
 
@@ -192,17 +199,17 @@ export default function CoachExperience() {
     {stage === "analysing" && <Loading copy="Finding the signal in your experience…"/>}
 
     {stage === "conversation" && analysis && <div className="mx-auto max-w-3xl px-5 py-12 md:py-20">
-      <div className="mb-5 flex items-center justify-between"><span className="text-xs text-ink/40">A quick follow-up · {questionIndex + 1} of {analysis.questions.length}</span><button onClick={()=>setStage("strategy")} className="text-xs text-ink/40 underline underline-offset-4">Skip to strategy</button></div>
-      <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-[#1f6650] transition-all duration-500" style={{width:`${((questionIndex+1)/analysis.questions.length)*100}%`}}/></div>
+      <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-ink/40">Adaptive evidence check · Question {answers.length+1}</span><span className="text-xs text-[#1f6650]">Claude stops as soon as it has enough evidence</span></div>
+      <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div>
       <section key={questionIndex} className="rounded-[30px] border border-black/[.07] bg-white/80 p-5 shadow-xl shadow-black/[.03] md:p-7">
         <div className="flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="min-w-0 flex-1"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="min-h-[84px] font-display text-3xl leading-tight">{analysis.questions[questionIndex]}</h2><p className="mt-3 text-sm leading-6 text-ink/45">Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy.</p></div></div>
-        <div className="mt-6 rounded-[22px] border border-black/[.08] bg-[#f4f2eb]/70 p-3 focus-within:border-[#1f6650]/40 focus-within:bg-white"><textarea key={`answer-${questionIndex}`} autoFocus value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none" placeholder="Type your answer…"/><div className="flex items-center justify-between gap-3"><span className="text-[11px] text-ink/30">Enter to continue · Shift + Enter for a new line</span><button onClick={submitAnswer} disabled={!answer.trim()} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">Continue →</button></div></div>
+        <div className="mt-6 rounded-[22px] border border-black/[.08] bg-[#f4f2eb]/70 p-3 focus-within:border-[#1f6650]/40 focus-within:bg-white"><textarea key={`answer-${questionIndex}`} autoFocus disabled={consultationLoading} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none disabled:opacity-50" placeholder="Type your answer…"/><div className="flex items-center justify-between gap-3"><span className="text-[11px] text-ink/30">{consultationLoading?"Claude is checking whether another question is needed…":"Enter to continue · Shift + Enter for a new line"}</span><button onClick={submitAnswer} disabled={!answer.trim()||consultationLoading} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">{consultationLoading?"Reviewing…":"Continue →"}</button></div></div>
       </section>
       {answers.length>0&&<p className="mt-4 text-center text-xs text-[#1f6650]">✓ {answers.length} {answers.length===1?"insight":"insights"} captured</p>}
     </div>}
 
     {stage === "strategy" && analysis && <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
-      <div className="grid gap-8 lg:grid-cols-[1.15fr_.85fr]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your positioning</span><h1 className="mt-3 font-display text-5xl leading-tight">Here’s the story I’d lead with.</h1><p className="mt-4 max-w-xl text-base leading-7 text-ink/50">{analysis.coachingNote}</p><div className="mt-8 flex flex-wrap gap-2">{positionOptions.map(x=><Pill key={x} active={positioning.toLowerCase()===x.toLowerCase()} onClick={()=>setPositioning(x)}>{x}</Pill>)}</div><div className="mt-8 rounded-[28px] bg-[#18201d] p-7 text-white shadow-2xl shadow-emerald-950/10"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Recommended lead</p><h2 className="mt-2 font-display text-4xl">{positioning}</h2><p className="mt-4 text-sm leading-6 text-white/55">{analysis.strategyReason}</p><button onClick={generate} className="mt-7 rounded-full bg-[#e5bc78] px-6 py-3.5 text-sm font-semibold text-[#18201d] transition hover:-translate-y-1">Write my application →</button></div></section>
+      <div className="grid gap-8 lg:grid-cols-[1.15fr_.85fr]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your strongest positioning options</span><h1 className="mt-3 font-display text-5xl leading-tight">Choose how your story should lead.</h1><p className="mt-4 max-w-xl text-base leading-7 text-ink/50">Claude created these focus areas from your experience, evidence, follow-up answers and the role’s priorities. Choose the one you want recruiters to remember—or use the recommended focus.</p><div className="mt-7 grid gap-3 sm:grid-cols-2">{positioningOptions.map(option=><button type="button" key={option.label} onClick={()=>setPositioning(option.label)} className={`rounded-[22px] border p-4 text-left transition hover:-translate-y-0.5 ${positioning===option.label?"border-[#1f6650] bg-[#dfece6] shadow-md shadow-emerald-900/5":"border-black/[.08] bg-white/70 hover:border-[#1f6650]/30"}`}><span className="flex items-start justify-between gap-2"><strong className="font-display text-xl">{option.label}</strong>{option.label===analysis.recommendedPositioning&&<small className="rounded-full bg-[#1f6650] px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-white">Recommended</small>}</span><span className="mt-2 block text-xs leading-5 text-ink/50">{option.reason}</span></button>)}</div>{selectedPositioning&&<div className="mt-5 rounded-[22px] border border-[#1f6650]/10 bg-white/60 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Why “{selectedPositioning.label}” fits</p><p className="mt-2 text-sm leading-6 text-ink/60">{selectedPositioning.reason}</p>{selectedPositioning.evidence?.length>0&&<div className="mt-3 flex flex-wrap gap-2">{selectedPositioning.evidence.map(item=><span key={item} className="rounded-full bg-[#dfece6] px-3 py-1.5 text-xs text-[#1f6650]">{item}</span>)}</div>}</div>}<div className="mt-8 rounded-[28px] bg-[#18201d] p-7 text-white shadow-2xl shadow-emerald-950/10"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Your chosen lead</p><h2 className="mt-2 font-display text-4xl">{positioning}</h2><p className="mt-4 text-sm leading-6 text-white/55">{positioning===analysis.recommendedPositioning?analysis.strategyReason:`You chose ${positioning.toLowerCase()} as the main impression. The resume will prioritise evidence that supports this focus while staying truthful to your experience.`}</p>{positioning!==analysis.recommendedPositioning&&<button onClick={()=>setPositioning(analysis.recommendedPositioning)} className="mt-5 text-xs text-[#98bfae] underline underline-offset-4">Use ResumeCoach’s recommendation: {analysis.recommendedPositioning}</button>}<button onClick={generate} className="mt-7 block rounded-full bg-[#e5bc78] px-6 py-3.5 text-sm font-semibold text-[#18201d] transition hover:-translate-y-1">Write my application →</button></div></section>
       <aside className="space-y-4"><div className="rounded-[28px] border border-black/[.07] bg-white/65 p-6"><p className="text-xs uppercase tracking-widest text-ink/35">What the employer cares about</p><div className="mt-5 space-y-4">{priorityEntries.map(([key,value])=><div key={key}><div className="mb-1.5 flex justify-between text-sm"><span>{key}</span><strong>{value}%</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-[#1f6650]" style={{width:`${value}%`}}/></div></div>)}</div></div><div className="rounded-[28px] border border-black/[.07] bg-[#dfece6] p-6"><p className="text-xs uppercase tracking-widest text-[#1f6650]">Evidence already found</p><div className="mt-4 flex flex-wrap gap-2">{(analysis.evidence || []).map(x=><span key={x} className="rounded-full bg-white/70 px-3 py-1.5 text-xs">{x}</span>)}</div></div></aside></div>
     </div>}
 
