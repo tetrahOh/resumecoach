@@ -285,6 +285,18 @@ export default function CoachExperience() {
     } catch (e) { setError(e.message); setStage("strategy"); }
   }
 
+  function reviseInputs() {
+    setError("");setDocuments(null);setTab("coachAdvice");setStage("input");
+  }
+
+  function reviseFollowUps() {
+    setError("");setDocuments(null);setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setTab("coachAdvice");setStage(analysis?.questions?.length?"conversation":"strategy");
+  }
+
+  function reviseStrategy() {
+    setError("");setDocuments(null);setTab("coachAdvice");setStage("strategy");
+  }
+
   function advanceReview() {
     const sections=documents?.reviewSections||[];
     setReviewMessage("");setReviewEditing(false);setReviewInstruction("");
@@ -366,6 +378,17 @@ export default function CoachExperience() {
 
     {stage === "result" && documents && <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
       <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your application is ready · You stay in control</span><h1 className="mt-2 font-display text-4xl md:text-5xl">Strong, specific, still you.</h1><p className="mt-2 text-sm text-ink/45">Preview everything, change any section, and export only when you’re ready.</p></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
+      <div className="mb-5 rounded-[24px] border border-black/[.07] bg-white/65 p-4 shadow-sm md:flex md:items-center md:justify-between md:gap-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Need to change direction?</p>
+          <p className="mt-1 text-sm leading-6 text-ink/55">Go back, edit the source or strategy, then regenerate a cleaner draft without starting from scratch.</p>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2 md:mt-0 md:justify-end">
+          <button onClick={reviseInputs} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/65 transition hover:border-[#1f6650]/40">Edit resume/job</button>
+          {analysis?.questions?.length>0&&<button onClick={reviseFollowUps} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/65 transition hover:border-[#1f6650]/40">Redo questions</button>}
+          <button onClick={reviseStrategy} className="rounded-full bg-[#1f6650] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f]">Change positioning</button>
+        </div>
+      </div>
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume preview"],["coverLetter","Cover letter"],["coachAdvice","Guided review"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
       {tab!=="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>{tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}<button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button></aside></div>}
       {tab==="coachAdvice"&&<div><div className="mb-5 flex flex-col justify-between gap-4 rounded-[24px] bg-[#dfece6] p-5 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Your first draft is ready</p><p className="mt-1 text-sm leading-6 text-ink/60">This is your draft. Jump between sections, keep what works, change anything, or preview and export whenever you’re ready.</p></div><button onClick={()=>setTab("resume")} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-5 py-3 text-sm font-semibold text-[#1f6650]">Preview full resume</button></div><div className="grid gap-5 lg:grid-cols-[260px_1fr]">
