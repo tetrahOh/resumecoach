@@ -161,6 +161,7 @@ export default function CoachExperience() {
     const result=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(result.error||"Your profile session could not be saved.");
     setProfiles(current=>current.map(profile=>profile.id===result.id?result:profile));
+    return result;
   }
 
   async function loadProfileHistory(profileId) {
@@ -177,11 +178,20 @@ export default function CoachExperience() {
 
   async function chooseProfile(id) {
     if(id===activeProfileId)return;
-    try { await persistActiveProfile(); } catch(e) { setError(e.message); return; }
-    const selected=profiles.find(p=>p.id===id);
+    setProfileSaving(true);setError("");setProfileNotice("");
+    let freshProfiles=profiles;
+    try {
+      await persistActiveProfile();
+      const response=await fetch("/api/profiles");
+      const result=await response.json().catch(()=>[]);
+      if(!response.ok)throw new Error(result.error||"Your profiles could not be loaded.");
+      freshProfiles=Array.isArray(result)?result:[];
+      setProfiles(freshProfiles);
+    } catch(e) { setError(e.message);setProfileSaving(false); return; }
+    const selected=freshProfiles.find(p=>p.id===id);
     const workspace=selected?.workspace_data||{};
     setActiveProfileId(id);setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
-    loadProfileHistory(id);
+    try { await loadProfileHistory(id); } finally { setProfileSaving(false); }
   }
   async function createProfile() {
     if(profiles.length>=3){setProfileError("You can create up to three career profiles.");return}
@@ -215,8 +225,8 @@ export default function CoachExperience() {
     editManagedProfile(id);setMenuOpen(true);setProfileNotice("");
   }
 
-  function useManagedProfile() {
-    chooseProfile(managedProfileId);setMenuOpen(false);setStage("input");setDocuments(null);
+  async function useManagedProfile() {
+    await chooseProfile(managedProfileId);setMenuOpen(false);
   }
 
   async function saveManagedProfile() {
