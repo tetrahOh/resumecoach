@@ -51,6 +51,7 @@ export default function CoachExperience() {
   const [answer, setAnswer] = useState("");
   const [questionIndex, setQuestionIndex] = useState(0);
   const [consultationLoading, setConsultationLoading] = useState(false);
+  const [customAnswerMode, setCustomAnswerMode] = useState(false);
   const [positioning, setPositioning] = useState("Problem solver");
   const [documents, setDocuments] = useState(null);
   const [tab, setTab] = useState("resume");
@@ -389,7 +390,7 @@ export default function CoachExperience() {
   }
 
   async function begin() {
-    setError("");setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setStage("analysing");
+    setError("");setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setCustomAnswerMode(false);setStage("analysing");
     try {
       if (mode === "general") {
         const data = await callCoach("analyseGeneral", { resume, personalDetails });
@@ -403,16 +404,16 @@ export default function CoachExperience() {
     } catch (e) { setError(e.message); setStage("input"); }
   }
 
-  async function submitAnswer() {
-    if (!answer.trim()||consultationLoading) return;
-    const submittedAnswer=answer.trim();
-    const next = [...answers, { question: analysis.questions[questionIndex], answer: submittedAnswer }];
+  async function submitAnswer(explicitAnswer) {
+    const submittedAnswer=(explicitAnswer??answer).trim();
+    if (!submittedAnswer||consultationLoading) return;
+    const next = [...answers, { question: analysis.questions[questionIndex].text, answer: submittedAnswer }];
     setAnswers(next);setConsultationLoading(true);setError("");
     try {
       const result=await callCoach("followUp",{resume,jobDescription:mode==="general"?"":jobDescription,analysis,answers:next});
       if(result.complete||!result.nextQuestion?.trim()||next.length>=8){
         if (mode === "general") await generate(); else setStage("strategy");
-      } else { setAnswer("");setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
+      } else { setAnswer("");setCustomAnswerMode(false);setAnalysis(current=>({...current,questions:[...current.questions,{text:result.nextQuestion.trim(),options:result.nextOptions||[]}]}));setQuestionIndex(questionIndex+1); }
     } catch(e) { setError(e.message);setAnswer(submittedAnswer);setAnswers(next.slice(0,-1)); }
     finally { setConsultationLoading(false); }
   }
@@ -458,7 +459,7 @@ export default function CoachExperience() {
   }
 
   function reviseFollowUps() {
-    setError("");setDocuments(null);setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setTab("coachAdvice");setStage(analysis?.questions?.length?"conversation":"strategy");
+    setError("");setDocuments(null);setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setCustomAnswerMode(false);setTab("coachAdvice");setStage(analysis?.questions?.length?"conversation":"strategy");
   }
 
   function reviseStrategy() {
@@ -535,8 +536,12 @@ export default function CoachExperience() {
       <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-ink/40">Adaptive evidence check · Question {answers.length+1}</span><span className="text-xs text-[#1f6650]">Questions stop as soon as there is enough evidence</span></div>
       <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div>
       <section key={questionIndex} className="rounded-[30px] border border-black/[.07] bg-white/80 p-5 shadow-xl shadow-black/[.03] md:p-7">
-        <div className="flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="min-w-0 flex-1"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="min-h-[84px] font-display text-3xl leading-tight">{analysis.questions[questionIndex]}</h2><p className="mt-3 text-sm leading-6 text-ink/45">Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy.</p></div></div>
-        <div className={`mt-6 rounded-[22px] border p-3 transition ${consultationLoading?"border-[#1f6650]/20 bg-[#dfece6]/60":"border-black/[.08] bg-[#f4f2eb]/70 focus-within:border-[#1f6650]/40 focus-within:bg-white"}`}><textarea key={`answer-${questionIndex}`} autoFocus disabled={consultationLoading} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none disabled:text-ink/60 disabled:opacity-100" placeholder="Type or speak your answer…"/><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><span className={`text-[11px] ${consultationLoading?"font-medium text-[#1f6650]":"text-ink/30"}`}>{consultationLoading?"✓ Answer submitted — checking for any remaining evidence gaps…":"Enter to continue · Shift + Enter for a new line"}</span><div className="flex gap-2"><button type="button" disabled={consultationLoading||!!listeningField} onClick={()=>startVoiceInput("answer",setAnswer)} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/60 disabled:opacity-40">{listeningField==="answer"?"Listening…":"🎙 Speak"}</button><button onClick={submitAnswer} disabled={!answer.trim()||consultationLoading} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">{consultationLoading?"Reviewing…":"Continue →"}</button></div></div></div>
+        <div className="flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="min-w-0 flex-1"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="min-h-[84px] font-display text-3xl leading-tight">{analysis.questions[questionIndex]?.text}</h2><p className="mt-3 text-sm leading-6 text-ink/45">{(analysis.questions[questionIndex]?.options?.length&&!customAnswerMode)?"Tap the closest answer, or describe it yourself.":"Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy."}</p></div></div>
+        {(analysis.questions[questionIndex]?.options?.length>0&&!customAnswerMode) ? (
+          <div className="mt-6 grid gap-2 sm:grid-cols-2">{analysis.questions[questionIndex].options.map(option=>{const isOther=/something else/i.test(option);return <button key={option} type="button" disabled={consultationLoading} onClick={()=>{if(isOther){setCustomAnswerMode(true);} else { setAnswer(option); submitAnswer(option); }}} className={`rounded-2xl border px-4 py-3 text-left text-sm font-medium transition disabled:opacity-40 ${isOther?"border-dashed border-black/15 bg-white/50 text-ink/55 sm:col-span-2":"border-black/10 bg-white text-ink/80 hover:border-[#1f6650]/40 hover:bg-[#dfece6]/40"}`}>{option}</button>;})}</div>
+        ) : (
+          <div className={`mt-6 rounded-[22px] border p-3 transition ${consultationLoading?"border-[#1f6650]/20 bg-[#dfece6]/60":"border-black/[.08] bg-[#f4f2eb]/70 focus-within:border-[#1f6650]/40 focus-within:bg-white"}`}><textarea key={`answer-${questionIndex}`} autoFocus disabled={consultationLoading} value={answer} onChange={e=>setAnswer(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();submitAnswer()}}} rows="3" className="w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 outline-none disabled:text-ink/60 disabled:opacity-100" placeholder="Type or speak your answer…"/><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><span className={`text-[11px] ${consultationLoading?"font-medium text-[#1f6650]":"text-ink/30"}`}>{consultationLoading?"✓ Answer submitted — checking for any remaining evidence gaps…":"Enter to continue · Shift + Enter for a new line"}</span><div className="flex gap-2">{analysis.questions[questionIndex]?.options?.length>0&&!consultationLoading&&<button type="button" onClick={()=>{setCustomAnswerMode(false);setAnswer("")}} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/50">← Back to options</button>}<button type="button" disabled={consultationLoading||!!listeningField} onClick={()=>startVoiceInput("answer",setAnswer)} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/60 disabled:opacity-40">{listeningField==="answer"?"Listening…":"🎙 Speak"}</button><button onClick={()=>submitAnswer()} disabled={!answer.trim()||consultationLoading} className="shrink-0 rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f] disabled:opacity-30">{consultationLoading?"Reviewing…":"Continue →"}</button></div></div></div>
+        )}
       </section>
       {answers.length>0&&<p className="mt-4 text-center text-xs text-[#1f6650]">✓ {answers.length} {answers.length===1?"insight":"insights"} captured</p>}
     </div>}
