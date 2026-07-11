@@ -80,6 +80,9 @@ export default function CoachExperience() {
   const [personalDetails, setPersonalDetails] = useState({ fullName:"", phone:"" });
   const [profileHistory, setProfileHistory] = useState([]);
   const [resumeView, setResumeView] = useState("edit");
+  const [customPositioningInput, setCustomPositioningInput] = useState("");
+  const [customPositioningLoading, setCustomPositioningLoading] = useState(false);
+  const [customPositioningError, setCustomPositioningError] = useState("");
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
@@ -336,6 +339,18 @@ export default function CoachExperience() {
     finally { setConsultationLoading(false); }
   }
 
+  async function submitCustomPositioning() {
+    const label = customPositioningInput.trim();
+    if (!label || customPositioningLoading) return;
+    setCustomPositioningLoading(true); setCustomPositioningError("");
+    try {
+      const option = await callCoach("customPositioning", { resume, jobDescription, analysis, label });
+      setAnalysis(current => ({ ...current, positioningOptions: [...(current.positioningOptions||[]).filter(o=>o.label.toLowerCase()!==option.label.toLowerCase()), { ...option, custom:true }] }));
+      setPositioning(option.label); setCustomPositioningInput("");
+    } catch (e) { setCustomPositioningError(e.message); }
+    finally { setCustomPositioningLoading(false); }
+  }
+
   async function generate() {
     setError(""); setStage("generating");
     try {
@@ -435,7 +450,9 @@ export default function CoachExperience() {
 
     {stage === "strategy" && analysis && <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
       <div className="grid gap-7 lg:grid-cols-[1fr_330px]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your positioning</span><h1 className="mt-3 max-w-2xl font-display text-4xl leading-tight md:text-5xl">Choose the idea you want recruiters to remember.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-ink/50">Each option comes from your evidence and this role’s priorities. Select one, or keep the recommended focus.</p>
-        <div className="mt-6 flex flex-wrap gap-2">{positioningOptions.map(option=><button type="button" key={option.label} onClick={()=>setPositioning(option.label)} className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition ${positioning===option.label?"border-[#1f6650] bg-[#1f6650] text-white shadow-md":"border-black/10 bg-white/70 text-ink/65 hover:border-[#1f6650]/40"}`}>{option.label}{option.label===analysis.recommendedPositioning&&<span className={`ml-2 text-[9px] uppercase tracking-wider ${positioning===option.label?"text-[#bfe0d1]":"text-[#1f6650]"}`}>Recommended</span>}</button>)}</div>
+        <div className="mt-6 flex flex-wrap gap-2">{positioningOptions.map(option=><button type="button" key={option.label} onClick={()=>setPositioning(option.label)} className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition ${positioning===option.label?"border-[#1f6650] bg-[#1f6650] text-white shadow-md":"border-black/10 bg-white/70 text-ink/65 hover:border-[#1f6650]/40"}`}>{option.label}{option.label===analysis.recommendedPositioning&&<span className={`ml-2 text-[9px] uppercase tracking-wider ${positioning===option.label?"text-[#bfe0d1]":"text-[#1f6650]"}`}>Recommended</span>}{option.custom&&<span className={`ml-2 text-[9px] uppercase tracking-wider ${positioning===option.label?"text-[#bfe0d1]":"text-[#1f6650]"}`}>Your idea</span>}</button>)}</div>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"><input value={customPositioningInput} disabled={customPositioningLoading} onChange={e=>setCustomPositioningInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submitCustomPositioning()}}} placeholder="Or suggest your own, e.g. Cloud Migration Specialist" className="min-w-0 flex-1 rounded-full border border-black/10 bg-white/70 px-4 py-2.5 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50"/><button type="button" disabled={!customPositioningInput.trim()||customPositioningLoading} onClick={submitCustomPositioning} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-4 py-2.5 text-xs font-semibold text-[#1f6650] disabled:opacity-30">{customPositioningLoading?"Checking fit…":"Add & check fit"}</button></div>
+        {customPositioningError&&<p className="mt-2 text-xs text-red-700">{customPositioningError}</p>}
         {selectedPositioning&&<div className="mt-5 rounded-[24px] border border-[#1f6650]/10 bg-white/70 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Why this fits you</p><p className="mt-2 text-sm leading-6 text-ink/65">{selectedPositioning.reason}</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-2xl bg-[#dfece6] p-4"><p className="text-[10px] font-semibold uppercase tracking-widest text-[#1f6650]">Resume proof</p><p className="mt-1 font-display text-3xl">{percentClamp(selectedPositioning.resumeScore)}%</p></div><div className="rounded-2xl bg-[#f5ead6] p-4"><p className="text-[10px] font-semibold uppercase tracking-widest text-[#8b6424]">Role fit</p><p className="mt-1 font-display text-3xl">{percentClamp(selectedPositioning.roleScore)}%</p></div></div>{selectedPositioning.evidence?.length>0&&<div className="mt-3 flex flex-wrap gap-2">{selectedPositioning.evidence.slice(0,3).map(item=><span key={item} className="rounded-full bg-[#dfece6] px-3 py-1.5 text-xs text-[#1f6650]">{item}</span>)}</div>}</div>}
         {recommendations.length>0&&<div className="mt-6"><div className="flex items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Recommended additions</p><h2 className="mt-1 font-display text-3xl">Useful things your resume is missing</h2></div><span className="hidden text-xs text-ink/35 sm:block">You decide what is included</span></div><div className="mt-4 space-y-3">{recommendations.map((item,index)=>{const choice=recommendationChoices[index];return <div key={`${item.title}-${index}`} className="rounded-[22px] border border-black/[.07] bg-white/70 p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><strong className="font-display text-xl">{item.title}</strong><p className="mt-1 text-sm leading-6 text-ink/55">{item.reason}</p><p className="mt-2 text-xs leading-5 text-[#1f6650]">Suggestion: {item.suggestedAction}</p></div><div className="flex shrink-0 gap-2"><button onClick={()=>setRecommendationChoices(current=>({...current,[index]:true}))} className={`rounded-full px-3 py-2 text-xs font-semibold ${choice===true?"bg-[#1f6650] text-white":"border border-black/10 bg-white text-ink/55"}`}>Include</button><button onClick={()=>setRecommendationChoices(current=>({...current,[index]:false}))} className={`rounded-full px-3 py-2 text-xs font-semibold ${choice===false?"bg-ink text-white":"border border-black/10 bg-white text-ink/55"}`}>Leave out</button></div></div></div>})}</div></div>}
         <div className="mt-7 flex flex-col items-start justify-between gap-4 rounded-[26px] bg-[#18201d] p-6 text-white sm:flex-row sm:items-center"><div><p className="text-xs uppercase tracking-widest text-[#98bfae]">Your lead focus</p><h2 className="mt-1 font-display text-3xl">{positioning}</h2>{positioning!==analysis.recommendedPositioning&&<button onClick={()=>setPositioning(analysis.recommendedPositioning)} className="mt-2 text-xs text-[#98bfae] underline underline-offset-4">Use recommendation: {analysis.recommendedPositioning}</button>}</div><button onClick={generate} className="shrink-0 rounded-full bg-[#e5bc78] px-6 py-3.5 text-sm font-semibold text-[#18201d] transition hover:-translate-y-1">Write my application →</button></div></section>
