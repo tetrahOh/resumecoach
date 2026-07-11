@@ -276,18 +276,26 @@ export default function CoachExperience() {
   function saveBlob(blob, name) { const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 
   async function downloadWord() {
-    const { Document, Packer, Paragraph, TextRun, AlignmentType } = await import("docx");
+    const { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, TabStopPosition } = await import("docx");
     const template = findTemplate(documents.template);
-    const { name, tagline, sections } = parseResumeText(documents.resume);
+    const { name, tagline, contact, sections } = parseResumeText(documents.resume);
     const align = template.docx.align === "CENTER" ? AlignmentType.CENTER : AlignmentType.LEFT;
     const children = [new Paragraph({ alignment: align, spacing: { after: 60 }, children: [new TextRun({ text: name, bold: true, size: 32, font: template.docx.font, color: template.docx.nameColor })] })];
-    if (tagline) children.push(new Paragraph({ alignment: align, spacing: { after: 220 }, children: [new TextRun({ text: tagline, size: 22, font: template.docx.font, color: template.docx.headingColor })] }));
+    if (tagline) children.push(new Paragraph({ alignment: align, spacing: { after: 40 }, children: [new TextRun({ text: tagline, bold: true, size: 21, font: template.docx.font, color: template.docx.headingColor })] }));
+    if (contact) children.push(new Paragraph({ alignment: align, spacing: { after: 60 }, children: [new TextRun({ text: contact, size: 18, font: template.docx.font, color: "666666" })] }));
+    children.push(new Paragraph({ spacing: { after: 200 }, border: { bottom: { color: template.docx.headingColor, space: 1, style: "single", size: 4 } } }));
     for (const section of sections) {
-      if (section.title) children.push(new Paragraph({ spacing: { before: 220, after: 90 }, children: [new TextRun({ text: section.title, bold: true, size: 20, font: template.docx.font, color: template.docx.headingColor })] }));
-      for (const line of section.lines) {
-        children.push(line
-          ? new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: line, size: 20, font: template.docx.font })] })
-          : new Paragraph({ text: "", spacing: { after: 40 } }));
+      if (section.title) children.push(new Paragraph({ spacing: { before: 200, after: 90 }, border: { bottom: { color: template.docx.headingColor, space: 4, style: "single", size: 4 } }, children: [new TextRun({ text: section.title, bold: true, size: 20, font: template.docx.font, color: template.docx.headingColor })] }));
+      for (const item of section.items||[]) {
+        if (item.type === "blank") { children.push(new Paragraph({ text: "", spacing: { after: 40 } })); continue; }
+        if (item.type === "bullet") { children.push(new Paragraph({ spacing: { after: 60 }, indent: { left: 360 }, children: [new TextRun({ text: `•  ${item.text}`, size: 20, font: template.docx.font })] })); continue; }
+        if (item.type === "heading") {
+          const runs = [new TextRun({ text: item.text, bold: true, size: 20, font: template.docx.font })];
+          if (item.date) runs.push(new TextRun({ text: `\t${item.date}`, size: 18, font: template.docx.font, color: "666666" }));
+          children.push(new Paragraph({ spacing: { before: 120, after: 40 }, tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }], children: runs }));
+          continue;
+        }
+        children.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: item.text, size: 20, font: template.docx.font })] }));
       }
     }
     const blob = await Packer.toBlob(new Document({ sections: [{ properties: {}, children }] }));
@@ -298,33 +306,62 @@ export default function CoachExperience() {
     const { jsPDF } = await import("jspdf");
     const template = findTemplate(documents.template);
     const t = template.pdf;
-    const { name, tagline, sections } = parseResumeText(documents.resume);
+    const { name, tagline, contact, sections } = parseResumeText(documents.resume);
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
     const marginX = 50, pageWidth = 495, centerX = marginX + pageWidth / 2;
-    let y = 60;
+    const alignOpt = t.align === "center" ? { align: "center" } : undefined;
+    const alignX = t.align === "center" ? centerX : marginX;
+    let y = 58;
     pdf.setFont(t.font, "bold"); pdf.setFontSize(20); pdf.setTextColor(...t.nameColor);
-    pdf.text(name, t.align === "center" ? centerX : marginX, y, t.align === "center" ? { align: "center" } : undefined);
+    pdf.text(name, alignX, y, alignOpt);
     y += 20;
     if (tagline) {
-      pdf.setFont(t.font, "normal"); pdf.setFontSize(11); pdf.setTextColor(90, 90, 90);
-      pdf.text(tagline, t.align === "center" ? centerX : marginX, y, t.align === "center" ? { align: "center" } : undefined);
-      y += 24;
-    } else y += 12;
+      pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor);
+      pdf.text(tagline, alignX, y, alignOpt);
+      y += 16;
+    }
+    if (contact) {
+      pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(110, 110, 110);
+      pdf.text(contact, alignX, y, alignOpt);
+      y += 14;
+    }
+    y += 6;
+    pdf.setDrawColor(...t.headingColor); pdf.setLineWidth(1);
+    pdf.line(marginX, y, marginX + pageWidth, y);
+    y += 20;
     for (const section of sections) {
-      if (y > 760) { pdf.addPage(); y = 55; }
+      if (y > 750) { pdf.addPage(); y = 55; }
       if (section.title) {
         pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor);
         pdf.text(section.title, marginX, y);
-        if (t.rule) { pdf.setDrawColor(...t.headingColor); pdf.line(marginX, y + 4, marginX + pageWidth, y + 4); }
+        pdf.setDrawColor(...t.headingColor); pdf.setLineWidth(0.75);
+        pdf.line(marginX, y + 4, marginX + pageWidth, y + 4);
         y += 18;
       }
-      pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(30, 30, 30);
-      for (const line of section.lines) {
-        if (!line) { y += 8; continue; }
-        for (const wrapped of pdf.splitTextToSize(line, pageWidth)) {
-          if (y > 780) { pdf.addPage(); y = 55; }
-          pdf.text(wrapped, marginX, y);
-          y += 14;
+      for (const item of section.items||[]) {
+        if (item.type === "blank") { y += 7; continue; }
+        if (y > 780) { pdf.addPage(); y = 55; }
+        if (item.type === "bullet") {
+          pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(35, 35, 35);
+          const wrapped = pdf.splitTextToSize(item.text, pageWidth - 16);
+          wrapped.forEach((wline, wi) => {
+            if (y > 780) { pdf.addPage(); y = 55; }
+            if (wi === 0) { pdf.setFillColor(...t.headingColor); pdf.circle(marginX + 4, y - 3, 1.7, "F"); }
+            pdf.text(wline, marginX + 16, y);
+            y += 13;
+          });
+        } else if (item.type === "heading") {
+          pdf.setFont(t.font, "bold"); pdf.setFontSize(10.5); pdf.setTextColor(20, 20, 20);
+          pdf.text(item.text, marginX, y);
+          if (item.date) { pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(120, 120, 120); pdf.text(item.date, marginX + pageWidth, y, { align: "right" }); }
+          y += 15;
+        } else {
+          pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(35, 35, 35);
+          for (const wrapped of pdf.splitTextToSize(item.text, pageWidth)) {
+            if (y > 780) { pdf.addPage(); y = 55; }
+            pdf.text(wrapped, marginX, y);
+            y += 13;
+          }
         }
       }
       y += 8;
@@ -417,10 +454,11 @@ export default function CoachExperience() {
   }
 
   const canBegin = resume.trim().length > 80 && jobDescription.trim().length > 80;
-  const priorityEntries = analysis ? Object.entries(analysis.priorities || {}).sort((a,b) => b[1] - a[1]).slice(0,5) : [];
+  const priorityEntries = analysis ? [...(analysis.priorities||[])].sort((a,b) => b.score - a.score).map(p=>[p.category,p.score]) : [];
   const positioningOptions = analysis?.positioningOptions?.length ? analysis.positioningOptions : fallbackPositionOptions.map((label,index)=>({label,reason:"A credible way to frame the evidence in your experience.",evidence:[],resumeScore:Math.max(35,76-index*8),roleScore:Math.max(35,72-index*7)}));
   const selectedPositioning = positioningOptions.find(option=>option.label===positioning) || positioningOptions[0];
-  const resumeProofEntries = priorityEntries.map(([key])=>[key, selectedPositioning?.categoryFit?.[key] ?? 0]);
+  const categoryFitMap = Object.fromEntries((selectedPositioning?.categoryFit||[]).map(c=>[c.category,c.score]));
+  const resumeProofEntries = priorityEntries.map(([category])=>[category, categoryFitMap[category] ?? 0]);
   const recommendations = analysis?.recommendations || [];
   const reviewSections = documents?.reviewSections || [];
   const reviewSection = reviewSections[reviewIndex];
@@ -464,7 +502,7 @@ export default function CoachExperience() {
     </div>}
 
     {stage === "strategy" && analysis && <div className="mx-auto max-w-6xl px-5 py-12 md:py-16">
-      <div className="grid gap-7 lg:grid-cols-[1fr_330px]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your positioning</span><h1 className="mt-3 max-w-2xl font-display text-4xl leading-tight md:text-5xl">Choose the idea you want recruiters to remember.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-ink/50">Each option comes from your evidence and this role’s priorities. Select one, or keep the recommended focus.</p>
+      <div className="grid gap-7 lg:grid-cols-[1fr_330px]"><section><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your professional identity</span><h1 className="mt-3 max-w-2xl font-display text-4xl leading-tight md:text-5xl">Choose how you want to present yourself to this employer.</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-ink/50">Each option is a way to frame your experience for this specific role, built from your resume and what this employer is actually looking for. Pick one, or keep our top recommendation.</p>
         <div className="mt-6 flex flex-wrap gap-2">{positioningOptions.map(option=><button type="button" key={option.label} onClick={()=>setPositioning(option.label)} className={`rounded-full border px-4 py-2.5 text-sm font-semibold transition ${positioning===option.label?"border-[#1f6650] bg-[#1f6650] text-white shadow-md":"border-black/10 bg-white/70 text-ink/65 hover:border-[#1f6650]/40"}`}>{option.label}{option.label===analysis.recommendedPositioning&&<span className={`ml-2 text-[9px] uppercase tracking-wider ${positioning===option.label?"text-[#bfe0d1]":"text-[#1f6650]"}`}>Recommended</span>}{option.custom&&<span className={`ml-2 text-[9px] uppercase tracking-wider ${positioning===option.label?"text-[#bfe0d1]":"text-[#1f6650]"}`}>Your idea</span>}</button>)}</div>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"><input value={customPositioningInput} disabled={customPositioningLoading} onChange={e=>setCustomPositioningInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();submitCustomPositioning()}}} placeholder="Or suggest your own, e.g. Cloud Migration Specialist" className="min-w-0 flex-1 rounded-full border border-black/10 bg-white/70 px-4 py-2.5 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50"/><button type="button" disabled={!customPositioningInput.trim()||customPositioningLoading} onClick={submitCustomPositioning} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-4 py-2.5 text-xs font-semibold text-[#1f6650] disabled:opacity-30">{customPositioningLoading?"Checking fit…":"Add & check fit"}</button></div>
         {customPositioningError&&<p className="mt-2 text-xs text-red-700">{customPositioningError}</p>}
