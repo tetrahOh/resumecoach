@@ -533,8 +533,8 @@ export default function CoachExperience() {
     {stage === "analysing" && <Loading copy="Finding the signal in your experience…"/>}
 
     {stage === "conversation" && analysis && <div className="mx-auto max-w-3xl px-5 py-12 md:py-20">
-      <div className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-ink/40">Adaptive evidence check · Question {answers.length+1}</span><span className="text-xs text-[#1f6650]">Questions stop as soon as there is enough evidence</span></div>
-      <div className="mb-5 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div>
+      <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"><span className="text-xs text-ink/40">Adaptive evidence check · Question {answers.length+1} of up to 8</span><span className="text-xs text-[#1f6650]">Stops as soon as there’s enough evidence — often sooner</span></div>
+      <div className="mb-5 flex gap-1.5">{Array.from({length:8}).map((_,i)=><div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${i<answers.length?"bg-[#1f6650]":i===answers.length?"bg-[#1f6650]/40":"bg-black/[.06]"}`}/>)}</div>
       <section key={questionIndex} className="rounded-[30px] border border-black/[.07] bg-white/80 p-5 shadow-xl shadow-black/[.03] md:p-7">
         <div className="flex gap-4"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#18201d] text-white">R</span><div className="min-w-0 flex-1"><p className="mb-2 text-xs font-semibold uppercase tracking-widest text-[#1f6650]">ResumeCoach</p><h2 className="min-h-[84px] font-display text-3xl leading-tight">{analysis.questions[questionIndex]?.text}</h2><p className="mt-3 text-sm leading-6 text-ink/45">{(analysis.questions[questionIndex]?.options?.length&&!customAnswerMode)?"Tap the closest answer, or describe it yourself.":"Answer naturally. A sentence or two is enough—I’m looking for evidence, not polished copy."}</p></div></div>
         {(analysis.questions[questionIndex]?.options?.length>0&&!customAnswerMode) ? (
