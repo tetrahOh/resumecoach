@@ -42,6 +42,8 @@ function Loading({ copy }) {
 
 export default function CoachExperience() {
   const [stage, setStage] = useState("input");
+  const [mode, setMode] = useState("tailored");
+  const [profileModeChoice, setProfileModeChoice] = useState("tailored");
   const [resume, setResume] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [analysis, setAnalysis] = useState(null);
@@ -197,17 +199,17 @@ export default function CoachExperience() {
     } catch(e) { setError(e.message);setProfileSaving(false); return; }
     const selected=freshProfiles.find(p=>p.id===id);
     const workspace=selected?.workspace_data||{};
-    setActiveProfileId(id);setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
+    setActiveProfileId(id);setMode(selected?.mode==="general"?"general":"tailored");setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
     try { await loadProfileHistory(id); } finally { setProfileSaving(false); }
   }
   async function createProfile() {
     if(profiles.length>=3){setProfileError("You can create up to three career profiles.");return}
     setProfileError(""); setProfileSaving(true);
     try {
-      const response=await fetch("/api/profiles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:profileName,targetRole:profileRole,resume,jobDescription,workspaceData:{}})});
+      const response=await fetch("/api/profiles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:profileName,targetRole:profileRole,mode:profileModeChoice,resume,jobDescription,workspaceData:{}})});
       const result=await response.json().catch(() => ({}));
       if(!response.ok) throw new Error(result.error || "That profile could not be created.");
-      setProfiles(current=>[result,...current]);setActiveProfileId(result.id);setProfileOpen(false);setProfileName("");setProfileRole("");setProfileNotice("Career profile created.");
+      setProfiles(current=>[result,...current]);setActiveProfileId(result.id);setMode(result.mode==="general"?"general":"tailored");setProfileOpen(false);setProfileName("");setProfileRole("");setProfileNotice("Career profile created.");
     } catch (e) { setProfileError(e.message); } finally { setProfileSaving(false); }
   }
   async function updateProfile() {
@@ -276,26 +278,34 @@ export default function CoachExperience() {
   function saveBlob(blob, name) { const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 
   async function downloadWord() {
-    const { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, TabStopPosition } = await import("docx");
+    const { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, TabStopPosition, ShadingType } = await import("docx");
     const template = findTemplate(documents.template);
+    const d = template.docx;
+    const isBlock = d.headerStyle === "block";
+    const isCompact = d.density === "compact";
+    const bodySize = isCompact ? 18 : 20;
+    const headingSize = isCompact ? 18 : 20;
+    const gapAfter = isCompact ? 40 : 60;
+    const sectionBefore = isCompact ? 140 : 200;
     const { name, tagline, contact, sections } = parseResumeText(documents.resume);
-    const align = template.docx.align === "CENTER" ? AlignmentType.CENTER : AlignmentType.LEFT;
-    const children = [new Paragraph({ alignment: align, spacing: { after: 60 }, children: [new TextRun({ text: name, bold: true, size: 32, font: template.docx.font, color: template.docx.nameColor })] })];
-    if (tagline) children.push(new Paragraph({ alignment: align, spacing: { after: 40 }, children: [new TextRun({ text: tagline, bold: true, size: 21, font: template.docx.font, color: template.docx.headingColor })] }));
-    if (contact) children.push(new Paragraph({ alignment: align, spacing: { after: 60 }, children: [new TextRun({ text: contact, size: 18, font: template.docx.font, color: "666666" })] }));
-    children.push(new Paragraph({ spacing: { after: 200 }, border: { bottom: { color: template.docx.headingColor, space: 1, style: "single", size: 4 } } }));
+    const align = d.align === "CENTER" ? AlignmentType.CENTER : AlignmentType.LEFT;
+    const headerShading = isBlock ? { fill: d.headerBg, type: ShadingType.SOLID } : undefined;
+    const children = [new Paragraph({ alignment: align, shading: headerShading, spacing: { before: isBlock?200:0, after: 60 }, children: [new TextRun({ text: name, bold: true, size: 32, font: d.font, color: d.nameColor })] })];
+    if (tagline) children.push(new Paragraph({ alignment: align, shading: headerShading, spacing: { after: 40 }, children: [new TextRun({ text: tagline, bold: true, size: 21, font: d.font, color: isBlock?d.nameColor:d.headingColor })] }));
+    if (contact) children.push(new Paragraph({ alignment: align, shading: headerShading, spacing: { after: isBlock?200:60 }, children: [new TextRun({ text: contact, size: 18, font: d.font, color: isBlock?d.nameColor:"666666" })] }));
+    if (!isBlock) children.push(new Paragraph({ spacing: { after: 200 }, border: { bottom: { color: d.headingColor, space: 1, style: "single", size: 4 } } }));
     for (const section of sections) {
-      if (section.title) children.push(new Paragraph({ spacing: { before: 200, after: 90 }, border: { bottom: { color: template.docx.headingColor, space: 4, style: "single", size: 4 } }, children: [new TextRun({ text: section.title, bold: true, size: 20, font: template.docx.font, color: template.docx.headingColor })] }));
+      if (section.title) children.push(new Paragraph({ spacing: { before: sectionBefore, after: 90 }, border: { bottom: { color: d.headingColor, space: 4, style: "single", size: 4 } }, children: [new TextRun({ text: section.title, bold: true, size: headingSize, font: d.font, color: d.headingColor })] }));
       for (const item of section.items||[]) {
         if (item.type === "blank") { children.push(new Paragraph({ text: "", spacing: { after: 40 } })); continue; }
-        if (item.type === "bullet") { children.push(new Paragraph({ spacing: { after: 60 }, indent: { left: 360 }, children: [new TextRun({ text: `•  ${item.text}`, size: 20, font: template.docx.font })] })); continue; }
+        if (item.type === "bullet") { children.push(new Paragraph({ spacing: { after: gapAfter }, indent: { left: 360 }, children: [new TextRun({ text: `•  ${item.text}`, size: bodySize, font: d.font })] })); continue; }
         if (item.type === "heading") {
-          const runs = [new TextRun({ text: item.text, bold: true, size: 20, font: template.docx.font })];
-          if (item.date) runs.push(new TextRun({ text: `\t${item.date}`, size: 18, font: template.docx.font, color: "666666" }));
-          children.push(new Paragraph({ spacing: { before: 120, after: 40 }, tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }], children: runs }));
+          const runs = [new TextRun({ text: item.text, bold: true, size: bodySize, font: d.font })];
+          if (item.date) runs.push(new TextRun({ text: `\t${item.date}`, size: bodySize-2, font: d.font, color: "666666" }));
+          children.push(new Paragraph({ spacing: { before: isCompact?80:120, after: 40 }, tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }], children: runs }));
           continue;
         }
-        children.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: item.text, size: 20, font: template.docx.font })] }));
+        children.push(new Paragraph({ spacing: { after: gapAfter }, children: [new TextRun({ text: item.text, size: bodySize, font: d.font })] }));
       }
     }
     const blob = await Packer.toBlob(new Document({ sections: [{ properties: {}, children }] }));
@@ -306,65 +316,74 @@ export default function CoachExperience() {
     const { jsPDF } = await import("jspdf");
     const template = findTemplate(documents.template);
     const t = template.pdf;
+    const isBlock = t.headerStyle === "block";
+    const isCompact = t.density === "compact";
+    const bulletSize = isCompact ? 9 : 10, headingItemSize = isCompact ? 9.5 : 10.5, sectionTitleSize = isCompact ? 10 : 11;
+    const lineStep = isCompact ? 11 : 13, sectionGapAfter = isCompact ? 5 : 8;
     const { name, tagline, contact, sections } = parseResumeText(documents.resume);
     const pdf = new jsPDF({ unit: "pt", format: "a4" });
-    const marginX = 50, pageWidth = 495, centerX = marginX + pageWidth / 2;
+    const marginX = 50, pageWidth = 495, centerX = marginX + pageWidth / 2, fullWidth = 595.28;
     const alignOpt = t.align === "center" ? { align: "center" } : undefined;
     const alignX = t.align === "center" ? centerX : marginX;
-    let y = 58;
-    pdf.setFont(t.font, "bold"); pdf.setFontSize(20); pdf.setTextColor(...t.nameColor);
-    pdf.text(name, alignX, y, alignOpt);
-    y += 20;
-    if (tagline) {
-      pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor);
-      pdf.text(tagline, alignX, y, alignOpt);
-      y += 16;
+    let y;
+    if (isBlock) {
+      const headerHeight = (isCompact?54:60) + (tagline?16:0) + (contact?14:0);
+      pdf.setFillColor(...t.headerBg); pdf.rect(0, 0, fullWidth, headerHeight, "F");
+      let hy = isCompact ? 30 : 34;
+      pdf.setFont(t.font, "bold"); pdf.setFontSize(isCompact?18:20); pdf.setTextColor(...t.nameColor);
+      pdf.text(name, alignX, hy, alignOpt);
+      hy += isCompact ? 18 : 20;
+      if (tagline) { pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.nameColor); pdf.text(tagline, alignX, hy, alignOpt); hy += 16; }
+      if (contact) { pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(...t.nameColor); pdf.text(contact, alignX, hy, alignOpt); hy += 14; }
+      y = headerHeight + (isCompact?18:24);
+    } else {
+      y = isCompact ? 50 : 58;
+      pdf.setFont(t.font, "bold"); pdf.setFontSize(isCompact?18:20); pdf.setTextColor(...t.nameColor);
+      pdf.text(name, alignX, y, alignOpt);
+      y += isCompact ? 18 : 20;
+      if (tagline) { pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor); pdf.text(tagline, alignX, y, alignOpt); y += 16; }
+      if (contact) { pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(110, 110, 110); pdf.text(contact, alignX, y, alignOpt); y += 14; }
+      y += 6;
+      pdf.setDrawColor(...t.headingColor); pdf.setLineWidth(1);
+      pdf.line(marginX, y, marginX + pageWidth, y);
+      y += isCompact ? 14 : 20;
     }
-    if (contact) {
-      pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(110, 110, 110);
-      pdf.text(contact, alignX, y, alignOpt);
-      y += 14;
-    }
-    y += 6;
-    pdf.setDrawColor(...t.headingColor); pdf.setLineWidth(1);
-    pdf.line(marginX, y, marginX + pageWidth, y);
-    y += 20;
     for (const section of sections) {
       if (y > 750) { pdf.addPage(); y = 55; }
       if (section.title) {
-        pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor);
+        pdf.setFont(t.font, "bold"); pdf.setFontSize(sectionTitleSize); pdf.setTextColor(...t.headingColor);
         pdf.text(section.title, marginX, y);
         pdf.setDrawColor(...t.headingColor); pdf.setLineWidth(0.75);
         pdf.line(marginX, y + 4, marginX + pageWidth, y + 4);
-        y += 18;
+        y += isCompact ? 15 : 18;
       }
       for (const item of section.items||[]) {
-        if (item.type === "blank") { y += 7; continue; }
+        if (item.type === "blank") { y += isCompact?5:7; continue; }
         if (y > 780) { pdf.addPage(); y = 55; }
         if (item.type === "bullet") {
-          pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(35, 35, 35);
+          pdf.setFont(t.font, "normal"); pdf.setFontSize(bulletSize); pdf.setTextColor(35, 35, 35);
           const wrapped = pdf.splitTextToSize(item.text, pageWidth - 16);
           wrapped.forEach((wline, wi) => {
             if (y > 780) { pdf.addPage(); y = 55; }
             if (wi === 0) { pdf.setFillColor(...t.headingColor); pdf.circle(marginX + 4, y - 3, 1.7, "F"); }
             pdf.text(wline, marginX + 16, y);
-            y += 13;
+            y += lineStep;
           });
         } else if (item.type === "heading") {
-          pdf.setFont(t.font, "bold"); pdf.setFontSize(10.5); pdf.setTextColor(20, 20, 20);
+          pdf.setFont(t.font, "bold"); pdf.setFontSize(headingItemSize); pdf.setTextColor(20, 20, 20);
           pdf.text(item.text, marginX, y);
           if (item.date) { pdf.setFont(t.font, "normal"); pdf.setFontSize(9); pdf.setTextColor(120, 120, 120); pdf.text(item.date, marginX + pageWidth, y, { align: "right" }); }
-          y += 15;
+          y += isCompact ? 13 : 15;
         } else {
-          pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(35, 35, 35);
+          pdf.setFont(t.font, "normal"); pdf.setFontSize(bulletSize); pdf.setTextColor(35, 35, 35);
           for (const wrapped of pdf.splitTextToSize(item.text, pageWidth)) {
             if (y > 780) { pdf.addPage(); y = 55; }
             pdf.text(wrapped, marginX, y);
-            y += 13;
+            y += lineStep;
           }
         }
       }
-      y += 8;
+      y += sectionGapAfter;
     }
     pdf.save("ResumeCoach-resume.pdf");
   }
@@ -372,9 +391,15 @@ export default function CoachExperience() {
   async function begin() {
     setError("");setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setStage("analysing");
     try {
-      const data = await callCoach("analyse", { resume, jobDescription, personalDetails });
-      setAnalysis(data);setPositioning(data.recommendedPositioning||"Problem solver");setRecommendationChoices({});
-      setStage(data.questions?.length ? "conversation" : "strategy");
+      if (mode === "general") {
+        const data = await callCoach("analyseGeneral", { resume, personalDetails });
+        setAnalysis(data);setRecommendationChoices({});
+        if (data.questions?.length) setStage("conversation"); else await generate();
+      } else {
+        const data = await callCoach("analyse", { resume, jobDescription, personalDetails });
+        setAnalysis(data);setPositioning(data.recommendedPositioning||"Problem solver");setRecommendationChoices({});
+        setStage(data.questions?.length ? "conversation" : "strategy");
+      }
     } catch (e) { setError(e.message); setStage("input"); }
   }
 
@@ -384,9 +409,10 @@ export default function CoachExperience() {
     const next = [...answers, { question: analysis.questions[questionIndex], answer: submittedAnswer }];
     setAnswers(next);setConsultationLoading(true);setError("");
     try {
-      const result=await callCoach("followUp",{resume,jobDescription,analysis,answers:next});
-      if(result.complete||!result.nextQuestion?.trim()||next.length>=8)setStage("strategy");
-      else { setAnswer("");setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
+      const result=await callCoach("followUp",{resume,jobDescription:mode==="general"?"":jobDescription,analysis,answers:next});
+      if(result.complete||!result.nextQuestion?.trim()||next.length>=8){
+        if (mode === "general") await generate(); else setStage("strategy");
+      } else { setAnswer("");setAnalysis(current=>({...current,questions:[...current.questions,result.nextQuestion.trim()]}));setQuestionIndex(questionIndex+1); }
     } catch(e) { setError(e.message);setAnswer(submittedAnswer);setAnswers(next.slice(0,-1)); }
     finally { setConsultationLoading(false); }
   }
@@ -406,18 +432,25 @@ export default function CoachExperience() {
   async function generate() {
     setError(""); setStage("generating");
     try {
-      const recommendations=analysis?.recommendations||[];
-      const acceptedRecommendations=recommendations.filter((_,index)=>recommendationChoices[index]===true);
-      const declinedRecommendations=recommendations.filter((_,index)=>recommendationChoices[index]===false);
-      const data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning, personalDetails, acceptedRecommendations, declinedRecommendations });
+      let data;
+      if (mode === "general") {
+        data = await callCoach("generateGeneral", { resume, analysis, answers, personalDetails });
+      } else {
+        const recommendations=analysis?.recommendations||[];
+        const acceptedRecommendations=recommendations.filter((_,index)=>recommendationChoices[index]===true);
+        const declinedRecommendations=recommendations.filter((_,index)=>recommendationChoices[index]===false);
+        data = await callCoach("generate", { resume, jobDescription, analysis, answers, positioning, personalDetails, acceptedRecommendations, declinedRecommendations });
+      }
+      const savedPositioning = mode==="general" ? null : positioning;
+      const savedJobDescription = mode==="general" ? "" : jobDescription;
       setDocuments(data);setTab("resume");setResumeView("preview");setReviewIndex(0);setReviewEditing(false);setReviewInstruction("");setReviewMessage("");setReviewStatuses({});setStage("result");localStorage.setItem("resumecoach_latest", JSON.stringify(data));
-      if(activeProfileId){const historyResponse=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId,resume,jobDescription,analysis,answers,positioning,documents:data})});const historyItem=await historyResponse.json().catch(()=>null);if(historyResponse.ok&&historyItem)setProfileHistory(current=>[historyItem,...current]);}
+      if(activeProfileId){const historyResponse=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId,resume,jobDescription:savedJobDescription,analysis,answers,positioning:savedPositioning,documents:data})});const historyItem=await historyResponse.json().catch(()=>null);if(historyResponse.ok&&historyItem)setProfileHistory(current=>[historyItem,...current]);}
       try {
-        const response=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription,analysis,answers,positioning,documents:data})});
+        const response=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription:savedJobDescription,analysis,answers,positioning:savedPositioning,documents:data})});
         const result=await response.json().catch(() => ({}));
         if(!response.ok) throw new Error(result.error || "The generated documents could not be saved.");
       } catch (saveError) { setError(`Your documents were generated, but could not be saved: ${saveError.message}`); }
-    } catch (e) { setError(e.message); setStage("strategy"); }
+    } catch (e) { setError(e.message); setStage(mode==="general"?"input":"strategy"); }
   }
 
   function reviseInputs() {
@@ -445,7 +478,7 @@ export default function CoachExperience() {
     if(!section||!reviewInstruction.trim())return;
     setReviewSaving(true);setReviewMessage("");setError("");
     try {
-      const revised=await callCoach("reviseSection",{resume:documents.resume,jobDescription,positioning,section,instruction:reviewInstruction});
+      const revised=await callCoach("reviseSection",{resume:documents.resume,jobDescription:mode==="general"?"":jobDescription,positioning:mode==="general"?"":positioning,section,instruction:reviewInstruction});
       const reviewSections=documents.reviewSections.map((item,index)=>index===reviewIndex?{...item,content:revised.content,rationale:revised.rationale}:item);
       const updatedResume=documents.resume.includes(section.content)?documents.resume.replace(section.content,revised.content):documents.resume;
       const updated={...documents,resume:updatedResume,reviewSections};
@@ -453,7 +486,7 @@ export default function CoachExperience() {
     } catch(e) { setError(e.message); } finally { setReviewSaving(false); }
   }
 
-  const canBegin = resume.trim().length > 80 && jobDescription.trim().length > 80;
+  const canBegin = mode==="general" ? resume.trim().length > 80 : resume.trim().length > 80 && jobDescription.trim().length > 80;
   const priorityEntries = analysis ? [...(analysis.priorities||[])].sort((a,b) => b.score - a.score).map(p=>[p.category,p.score]) : [];
   const positioningOptions = analysis?.positioningOptions?.length ? analysis.positioningOptions : fallbackPositionOptions.map((label,index)=>({label,reason:"A credible way to frame the evidence in your experience.",evidence:[],resumeScore:Math.max(35,76-index*8),roleScore:Math.max(35,72-index*7)}));
   const selectedPositioning = positioningOptions.find(option=>option.label===positioning) || positioningOptions[0];
@@ -468,7 +501,7 @@ export default function CoachExperience() {
 
     {accountOpen&&<div className="fixed inset-0 z-[80] flex justify-end bg-[#18201d]/35 backdrop-blur-sm" onMouseDown={e=>{if(e.target===e.currentTarget)setAccountOpen(false)}}><aside className="h-full w-full max-w-md overflow-y-auto bg-[#f4f2eb] p-6 shadow-2xl md:p-8" role="dialog" aria-modal="true" aria-label="Your profile"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your workspace</p><h2 className="mt-2 font-display text-4xl">My profile</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep your essential contact details ready and manage separate career directions.</p></div><button onClick={()=>setAccountOpen(false)} aria-label="Close menu" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-lg">×</button></div><div className="mt-7 rounded-[24px] border border-black/[.07] bg-white/70 p-5"><div className="flex items-center gap-3"><span className="grid h-11 w-11 place-items-center rounded-full bg-[#18201d] font-display text-xl text-white">{(personalDetails.fullName||user?.email||"Y").charAt(0).toUpperCase()}</span><div><p className="font-semibold">My profile</p><p className="text-xs text-ink/40">Used in your resumes and cover letters</p></div></div><div className="mt-5 grid gap-4"><label className="text-xs text-ink/50">Full name<input value={personalDetails.fullName} disabled={accountSaving} onChange={e=>setPersonalDetails({...personalDetails,fullName:e.target.value})} autoComplete="name" className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label><label className="text-xs text-ink/50">Email<input value={user?.email||""} disabled className="mt-1.5 w-full rounded-2xl border border-black/10 bg-black/[.03] px-4 py-3 text-sm text-ink/45"/></label><label className="text-xs text-ink/50">Mobile<input value={personalDetails.phone} disabled={accountSaving} onChange={e=>setPersonalDetails({...personalDetails,phone:e.target.value})} inputMode="tel" autoComplete="tel" className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label></div>{profileError&&<p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{profileError}</p>}<button disabled={accountSaving} onClick={savePersonalDetails} className="mt-5 w-full rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white disabled:opacity-40">{accountSaving?"Saving…":"Save personal details"}</button></div><button onClick={()=>{setAccountOpen(false);openProfileManager()}} className="mt-5 flex w-full items-center justify-between rounded-[22px] border border-black/[.07] bg-white/60 p-5 text-left"><span><strong className="block font-display text-xl">Career profiles</strong><small className="mt-1 block text-ink/45">{profiles.length} separate {profiles.length===1?"direction":"directions"}</small></span><span className="text-xl text-[#1f6650]">→</span></button><p className="mt-3 px-2 text-xs leading-5 text-ink/40">Each career profile has its own source resume and application workflow. Switching profiles starts a clean workspace.</p><button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="mt-7 w-full text-center text-xs text-ink/40 underline underline-offset-4">Sign out</button></aside></div>}
 
-    {menuOpen&&<div className="fixed inset-0 z-[80] flex justify-end bg-[#18201d]/35 backdrop-blur-sm" onMouseDown={e=>{if(e.target===e.currentTarget)setMenuOpen(false)}}><aside className="h-full w-full max-w-md overflow-y-auto bg-[#f4f2eb] p-6 shadow-2xl md:p-8" role="dialog" aria-modal="true" aria-label="Career profiles"><div className="flex items-start justify-between gap-4"><div><button type="button" onClick={()=>{setMenuOpen(false);setAccountOpen(true)}} className="mb-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-ink/55 transition hover:border-[#1f6650]/35 hover:text-[#1f6650]">Back to My profile</button><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your workspace</p><h2 className="mt-2 font-display text-4xl">Career profiles</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep a different story ready for each career direction.</p></div><button onClick={()=>setMenuOpen(false)} aria-label="Close profile menu" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-lg">×</button></div><div className="mt-7 space-y-2">{profiles.map(profile=><button key={profile.id} onClick={()=>editManagedProfile(profile.id)} className={`w-full rounded-[20px] border p-4 text-left transition ${managedProfileId===profile.id?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white/60 hover:border-[#1f6650]/30"}`}><span className="flex items-center justify-between gap-3"><strong className="font-display text-xl">{profile.name}</strong>{activeProfileId===profile.id&&<small className="rounded-full bg-[#1f6650] px-2 py-1 text-[9px] uppercase tracking-wider text-white">In use</small>}</span><span className="mt-1 block text-xs text-ink/45">{profile.target_role||"No target role yet"}</span></button>)}{!profiles.length&&<div className="rounded-[20px] border border-dashed border-black/10 p-5 text-sm text-ink/45">You haven’t saved a career profile yet.</div>}</div>{managedProfileId&&<div className="mt-6 rounded-[24px] border border-black/[.07] bg-white/70 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Edit profile details</p><label className="mt-4 block text-xs text-ink/50">Profile name<input value={managedProfileName} disabled={profileSaving} onChange={e=>setManagedProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input value={managedProfileRole} disabled={profileSaving} onChange={e=>setManagedProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label>{profileError&&<p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{profileError}</p>}{profileNotice&&<p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{profileNotice}</p>}<div className="mt-5 flex flex-col gap-2 sm:flex-row"><button disabled={profileSaving} onClick={useManagedProfile} className="flex-1 rounded-full border border-[#1f6650] bg-white px-4 py-3 text-sm font-semibold text-[#1f6650]">Use this profile</button><button disabled={profileSaving||!managedProfileName.trim()} onClick={saveManagedProfile} className="flex-1 rounded-full bg-[#1f6650] px-4 py-3 text-sm font-semibold text-white disabled:opacity-30">{profileSaving?"Saving…":"Save details"}</button></div><div className="mt-4 border-t border-black/[.06] pt-4">{deleteConfirmId===managedProfileId?<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-red-700">Delete “{managedProfileName}”? Its resume and job description are removed; saved applications stay in your history, just unlinked from this profile.</p><div className="flex shrink-0 gap-2"><button disabled={profileSaving} onClick={()=>setDeleteConfirmId("")} className="rounded-full px-4 py-2 text-xs font-semibold text-ink/50">Cancel</button><button disabled={profileSaving} onClick={()=>deleteProfile(managedProfileId)} className="rounded-full bg-red-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{profileSaving?"Deleting…":"Yes, delete"}</button></div></div>:<button disabled={profileSaving} onClick={()=>setDeleteConfirmId(managedProfileId)} className="text-xs font-semibold text-red-700 underline underline-offset-4 disabled:opacity-40">Delete this profile</button>}</div></div>}<button onClick={()=>{setMenuOpen(false);setProfileError("");setProfileOpen(true)}} className="mt-6 w-full rounded-full bg-[#18201d] px-5 py-3.5 text-sm font-semibold text-white">+ Create another profile</button><button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="mt-5 w-full text-center text-xs text-ink/40 underline underline-offset-4">Sign out</button></aside></div>}
+    {menuOpen&&<div className="fixed inset-0 z-[80] flex justify-end bg-[#18201d]/35 backdrop-blur-sm" onMouseDown={e=>{if(e.target===e.currentTarget)setMenuOpen(false)}}><aside className="h-full w-full max-w-md overflow-y-auto bg-[#f4f2eb] p-6 shadow-2xl md:p-8" role="dialog" aria-modal="true" aria-label="Career profiles"><div className="flex items-start justify-between gap-4"><div><button type="button" onClick={()=>{setMenuOpen(false);setAccountOpen(true)}} className="mb-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-semibold text-ink/55 transition hover:border-[#1f6650]/35 hover:text-[#1f6650]">Back to My profile</button><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your workspace</p><h2 className="mt-2 font-display text-4xl">Career profiles</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep a different story ready for each career direction.</p></div><button onClick={()=>setMenuOpen(false)} aria-label="Close profile menu" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-black/10 bg-white text-lg">×</button></div><div className="mt-7 space-y-2">{profiles.map(profile=><button key={profile.id} onClick={()=>editManagedProfile(profile.id)} className={`w-full rounded-[20px] border p-4 text-left transition ${managedProfileId===profile.id?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white/60 hover:border-[#1f6650]/30"}`}><span className="flex items-center justify-between gap-3"><span className="flex items-center gap-2"><strong className="font-display text-xl">{profile.name}</strong><small className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${profile.mode==="general"?"bg-[#f5ead6] text-[#8b6424]":"bg-[#dfece6] text-[#1f6650]"}`}>{profile.mode==="general"?"General":"Tailored"}</small></span>{activeProfileId===profile.id&&<small className="rounded-full bg-[#1f6650] px-2 py-1 text-[9px] uppercase tracking-wider text-white">In use</small>}</span><span className="mt-1 block text-xs text-ink/45">{profile.target_role||"No target role yet"}</span></button>)}{!profiles.length&&<div className="rounded-[20px] border border-dashed border-black/10 p-5 text-sm text-ink/45">You haven’t saved a career profile yet.</div>}</div>{managedProfileId&&<div className="mt-6 rounded-[24px] border border-black/[.07] bg-white/70 p-5"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Edit profile details</p><label className="mt-4 block text-xs text-ink/50">Profile name<input value={managedProfileName} disabled={profileSaving} onChange={e=>setManagedProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input value={managedProfileRole} disabled={profileSaving} onChange={e=>setManagedProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650]"/></label>{profileError&&<p className="mt-3 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{profileError}</p>}{profileNotice&&<p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{profileNotice}</p>}<div className="mt-5 flex flex-col gap-2 sm:flex-row"><button disabled={profileSaving} onClick={useManagedProfile} className="flex-1 rounded-full border border-[#1f6650] bg-white px-4 py-3 text-sm font-semibold text-[#1f6650]">Use this profile</button><button disabled={profileSaving||!managedProfileName.trim()} onClick={saveManagedProfile} className="flex-1 rounded-full bg-[#1f6650] px-4 py-3 text-sm font-semibold text-white disabled:opacity-30">{profileSaving?"Saving…":"Save details"}</button></div><div className="mt-4 border-t border-black/[.06] pt-4">{deleteConfirmId===managedProfileId?<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs leading-5 text-red-700">Delete “{managedProfileName}”? Its resume and job description are removed; saved applications stay in your history, just unlinked from this profile.</p><div className="flex shrink-0 gap-2"><button disabled={profileSaving} onClick={()=>setDeleteConfirmId("")} className="rounded-full px-4 py-2 text-xs font-semibold text-ink/50">Cancel</button><button disabled={profileSaving} onClick={()=>deleteProfile(managedProfileId)} className="rounded-full bg-red-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{profileSaving?"Deleting…":"Yes, delete"}</button></div></div>:<button disabled={profileSaving} onClick={()=>setDeleteConfirmId(managedProfileId)} className="text-xs font-semibold text-red-700 underline underline-offset-4 disabled:opacity-40">Delete this profile</button>}</div></div>}<button onClick={()=>{setMenuOpen(false);setProfileError("");setProfileModeChoice("tailored");setProfileOpen(true)}} className="mt-6 w-full rounded-full bg-[#18201d] px-5 py-3.5 text-sm font-semibold text-white">+ Create another profile</button><button onClick={async()=>{await createClient().auth.signOut();location.href="/login"}} className="mt-5 w-full text-center text-xs text-ink/40 underline underline-offset-4">Sign out</button></aside></div>}
 
     {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
     {profileNotice && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-emerald-900/10 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{profileNotice}</div>}
@@ -477,16 +510,23 @@ export default function CoachExperience() {
 
     {extracting&&<div className="fixed inset-0 z-[100] grid cursor-wait place-items-center bg-[#18201d]/70 p-5 backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="file-reading-title" aria-describedby="file-reading-description"><div className="w-full max-w-md rounded-[30px] bg-[#f4f2eb] p-8 text-center shadow-2xl"><div className="relative mx-auto mb-6 h-16 w-16"><span className="absolute inset-0 animate-ping rounded-full bg-[#98bfae]/30"/><span className="absolute inset-2 animate-pulse rounded-full bg-[#1f6650]"/><span className="absolute inset-0 grid place-items-center text-xl text-white">✦</span></div><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">File received</p><h2 id="file-reading-title" className="mt-2 font-display text-3xl">Reading your {extracting==="resume"?"resume":"job description"}…</h2><p id="file-reading-description" className="mt-3 text-sm leading-6 text-ink/55">Extracting the text and checking the document. This usually takes a few moments.</p><div className="mt-7 h-2 overflow-hidden rounded-full bg-black/10" aria-label="Reading in progress"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div><p className="mt-4 text-xs text-ink/40">Please keep this window open. You can continue when reading is complete.</p></div></div>}
 
-    {profileOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#18201d]/35 p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-[#f4f2eb] p-7 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">New career profile</p><h2 className="mt-2 font-display text-3xl">Save this career direction.</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep separate source resumes for different roles without mixing your stories.</p><label className="mt-6 block text-xs text-ink/50">Profile name<input autoFocus disabled={profileSaving} value={profileName} onChange={e=>setProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50" placeholder="e.g. Cyber Security"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input disabled={profileSaving} value={profileRole} onChange={e=>setProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50" placeholder="e.g. GRC Analyst"/></label>{profileError&&<p role="alert" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{profileError}</p>}<div className="mt-6 flex justify-end gap-2"><button disabled={profileSaving} onClick={()=>setProfileOpen(false)} className="rounded-full px-5 py-3 text-sm text-ink/50 disabled:opacity-40">Cancel</button><button disabled={!profileName.trim()||profileSaving} onClick={createProfile} className="rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white disabled:opacity-30">{profileSaving?"Creating…":"Create profile"}</button></div></div></div>}
+    {profileOpen&&<div className="fixed inset-0 z-50 grid place-items-center bg-[#18201d]/35 p-5 backdrop-blur-sm"><div className="w-full max-w-md rounded-[28px] bg-[#f4f2eb] p-7 shadow-2xl"><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">New career profile</p><h2 className="mt-2 font-display text-3xl">Save this career direction.</h2><p className="mt-2 text-sm leading-6 text-ink/50">Keep separate source resumes for different roles without mixing your stories.</p>
+      <div className="mt-6 grid gap-2 sm:grid-cols-2">
+        <button type="button" disabled={profileSaving} onClick={()=>setProfileModeChoice("tailored")} className={`rounded-2xl border p-3.5 text-left transition disabled:opacity-50 ${profileModeChoice==="tailored"?"border-[#1f6650] bg-[#dfece6]":"border-black/[.08] bg-white hover:border-[#1f6650]/30"}`}><strong className="block text-sm">Tailored to a job</strong><span className="mt-0.5 block text-xs leading-4 text-ink/45">Paste a job description each time; we analyse it and tailor the resume and cover letter to it.</span></button>
+        <button type="button" disabled={profileSaving} onClick={()=>setProfileModeChoice("general")} className={`rounded-2xl border p-3.5 text-left transition disabled:opacity-50 ${profileModeChoice==="general"?"border-[#1f6650] bg-[#dfece6]":"border-black/[.08] bg-white hover:border-[#1f6650]/30"}`}><strong className="block text-sm">General resume</strong><span className="mt-0.5 block text-xs leading-4 text-ink/45">No job description needed — just a strong, all-purpose resume built from a few questions.</span></button>
+      </div>
+      <label className="mt-5 block text-xs text-ink/50">Profile name<input autoFocus disabled={profileSaving} value={profileName} onChange={e=>setProfileName(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50" placeholder="e.g. Cyber Security"/></label><label className="mt-4 block text-xs text-ink/50">Target role<input disabled={profileSaving} value={profileRole} onChange={e=>setProfileRole(e.target.value)} className="mt-1.5 w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-sm outline-none focus:border-[#1f6650] disabled:opacity-50" placeholder="e.g. GRC Analyst"/></label>{profileError&&<p role="alert" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{profileError}</p>}<div className="mt-6 flex justify-end gap-2"><button disabled={profileSaving} onClick={()=>setProfileOpen(false)} className="rounded-full px-5 py-3 text-sm text-ink/50 disabled:opacity-40">Cancel</button><button disabled={!profileName.trim()||profileSaving} onClick={createProfile} className="rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white disabled:opacity-30">{profileSaving?"Creating…":"Create profile"}</button></div></div></div>}
 
     {stage === "input" && <div className="mx-auto max-w-6xl px-5 py-12 md:py-20">
-      <div className="mb-12 max-w-3xl"><span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#1f6650]/15 bg-[#dfece6] px-3 py-1.5 text-xs font-medium text-[#1f6650]">✦ A resume coach, not a template builder</span><h1 className="font-display text-5xl leading-[1.02] tracking-[-.035em] md:text-7xl">Turn your experience into<br/><em className="font-normal text-[#1f6650]">a stronger application.</em></h1><p className="mt-6 max-w-xl text-base leading-7 text-ink/55">Add your resume and the role you want. We’ll tailor your strategy, resume and cover letter to what the employer values.</p></div>
-      {user&&<div className="mb-5 flex flex-col justify-between gap-3 rounded-[22px] border border-black/[.07] bg-white/50 p-4 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-[.15em] text-[#1f6650]">Career profile</p><p className="mt-1 text-sm text-ink/45">Everything saves automatically to the selected profile.</p></div><div className="flex flex-wrap gap-2"><select disabled={profileSaving} value={activeProfileId} onChange={e=>chooseProfile(e.target.value)} className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm disabled:opacity-50 sm:min-w-64"><option value="">Choose a profile</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}{p.target_role?` · ${p.target_role}`:""}</option>)}</select>{activeProfileId&&<button disabled={profileSaving} onClick={openProfileManager} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold disabled:opacity-40">Edit profile</button>}<button disabled={profiles.length>=3} onClick={()=>{setProfileError("");setProfileNotice("");setProfileOpen(true)}} className="rounded-full bg-[#18201d] px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">{profiles.length>=3?"3 profile limit":"+ New profile"}</button></div></div>}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="mb-8 max-w-3xl"><span className="mb-5 inline-flex items-center gap-2 rounded-full border border-[#1f6650]/15 bg-[#dfece6] px-3 py-1.5 text-xs font-medium text-[#1f6650]">✦ A resume coach, not a template builder</span><h1 className="font-display text-5xl leading-[1.02] tracking-[-.035em] md:text-7xl">Turn your experience into<br/><em className="font-normal text-[#1f6650]">a stronger application.</em></h1><p className="mt-6 max-w-xl text-base leading-7 text-ink/55">{mode==="general"?"Add your current resume. We’ll ask a few quick questions to fill in the gaps, then build a strong, general-purpose resume you can adapt for multiple applications.":"Add your resume and the role you want. We’ll tailor your strategy, resume and cover letter to what the employer values."}</p></div>
+      {!activeProfileId&&<div className="mb-6 grid gap-3 sm:grid-cols-2"><button type="button" onClick={()=>setMode("tailored")} className={`rounded-[22px] border p-5 text-left transition ${mode==="tailored"?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white/60 hover:border-[#1f6650]/30"}`}><strong className="font-display text-xl">Tailored to a job</strong><p className="mt-1.5 text-sm leading-5 text-ink/55">Paste a job description and we’ll analyse what the employer wants, help you position your experience, and write a resume and cover letter tailored to that role.</p></button><button type="button" onClick={()=>setMode("general")} className={`rounded-[22px] border p-5 text-left transition ${mode==="general"?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white/60 hover:border-[#1f6650]/30"}`}><strong className="font-display text-xl">General resume</strong><p className="mt-1.5 text-sm leading-5 text-ink/55">No job description needed. We’ll ask a few questions to fill in the gaps, then build a strong, general-purpose resume for multiple applications.</p></button></div>}
+      {activeProfileId&&<div className="mb-6 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/60 px-4 py-2 text-xs font-semibold text-ink/60"><span className={`h-2 w-2 rounded-full ${mode==="general"?"bg-[#c9963e]":"bg-[#1f6650]"}`}/>{mode==="general"?"General resume profile — no job description needed":"Tailored-to-a-job profile"}</div>}
+      {user&&<div className="mb-5 flex flex-col justify-between gap-3 rounded-[22px] border border-black/[.07] bg-white/50 p-4 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-[.15em] text-[#1f6650]">Career profile</p><p className="mt-1 text-sm text-ink/45">Everything saves automatically to the selected profile.</p></div><div className="flex flex-wrap gap-2"><select disabled={profileSaving} value={activeProfileId} onChange={e=>chooseProfile(e.target.value)} className="min-w-0 flex-1 rounded-full border border-black/10 bg-white px-4 py-2.5 text-sm disabled:opacity-50 sm:min-w-64"><option value="">Choose a profile</option>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}{p.target_role?` · ${p.target_role}`:""}{p.mode==="general"?" (General)":""}</option>)}</select>{activeProfileId&&<button disabled={profileSaving} onClick={openProfileManager} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold disabled:opacity-40">Edit profile</button>}<button disabled={profiles.length>=3} onClick={()=>{setProfileError("");setProfileNotice("");setProfileModeChoice("tailored");setProfileOpen(true)}} className="rounded-full bg-[#18201d] px-4 py-2.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-35">{profiles.length>=3?"3 profile limit":"+ New profile"}</button></div></div>}
+      <div className={`grid gap-5 ${mode==="tailored"?"lg:grid-cols-2":""}`}>
         <div className="group rounded-[28px] border border-black/[.07] bg-white/65 p-5 shadow-sm transition focus-within:-translate-y-1 focus-within:border-[#1f6650]/30 focus-within:bg-white focus-within:shadow-xl focus-within:shadow-emerald-950/5"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">Your current resume</strong><small className="text-ink/35">Paste or upload</small></span><textarea value={resume} onChange={e=>setResume(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25" placeholder="Paste your resume here. Don’t clean it up first—we need to see the real starting point."/><label className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-black/15 px-4 py-3 text-xs text-ink/45 transition hover:border-[#1f6650] hover:text-[#1f6650]"><span>{extracting==="resume"?"Reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"resume")}/></label></div>
-        <div className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Paste or upload</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/><label className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-white/15 px-4 py-3 text-xs text-white/45 transition hover:border-[#98bfae] hover:text-[#98bfae]"><span>{extracting==="job"?"Reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"job")}/></label></div>
+        {mode==="tailored"&&<div className="group rounded-[28px] border border-black/[.07] bg-[#18201d] p-5 text-white shadow-sm transition focus-within:-translate-y-1 focus-within:shadow-xl focus-within:shadow-emerald-950/15"><span className="mb-3 flex items-center justify-between"><strong className="font-display text-xl">The role you want</strong><small className="text-white/35">Paste or upload</small></span><textarea value={jobDescription} onChange={e=>setJobDescription(e.target.value)} rows="13" className="w-full resize-none bg-transparent text-sm leading-6 text-white outline-none placeholder:text-white/25" placeholder="Paste the job description. We’ll decode what the employer really values."/><label className="mt-3 flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-white/15 px-4 py-3 text-xs text-white/45 transition hover:border-[#98bfae] hover:text-[#98bfae]"><span>{extracting==="job"?"Reading your file…":"Upload PDF or image"}</span><span>↑</span><input disabled={!!extracting} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" className="hidden" onChange={e=>uploadFile(e.target.files?.[0],"job")}/></label></div>}
       </div>
-      <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><p className="text-xs text-ink/40">Your draft stays in this browser. Generated content is grounded in what you provide.</p><button disabled={!canBegin} onClick={begin} className="group rounded-full bg-[#1f6650] px-7 py-4 text-sm font-semibold text-white shadow-xl shadow-emerald-900/15 transition hover:-translate-y-1 hover:bg-[#174f3f] disabled:translate-y-0 disabled:opacity-30">Find my strongest angle <span className="ml-2 inline-block transition group-hover:translate-x-1">→</span></button></div>
+      <div className="mt-7 flex flex-col items-center justify-between gap-4 sm:flex-row"><p className="text-xs text-ink/40">{mode==="general"?"Your draft stays in this browser. We’ll only ask what’s needed to strengthen your resume.":"Your draft stays in this browser. Generated content is grounded in what you provide."}</p><button disabled={!canBegin} onClick={begin} className="group rounded-full bg-[#1f6650] px-7 py-4 text-sm font-semibold text-white shadow-xl shadow-emerald-900/15 transition hover:-translate-y-1 hover:bg-[#174f3f] disabled:translate-y-0 disabled:opacity-30">{mode==="general"?"Start building my resume":"Find my strongest angle"} <span className="ml-2 inline-block transition group-hover:translate-x-1">→</span></button></div>
     </div>}
 
     {stage === "analysing" && <Loading copy="Finding the signal in your experience…"/>}
@@ -515,19 +555,19 @@ export default function CoachExperience() {
     {stage === "generating" && <Loading copy="Writing it like a human who knows your value…"/>}
 
     {stage === "result" && documents && <div className="mx-auto max-w-6xl px-5 py-10 md:py-14">
-      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">Your application is ready · You stay in control</span><h1 className="mt-2 font-display text-4xl md:text-5xl">Strong, specific, still you.</h1><p className="mt-2 text-sm text-ink/45">Preview everything, change any section, and export only when you’re ready.</p></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
+      <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-end"><div><span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]"><span className={`rounded-full px-2 py-0.5 text-[9px] ${mode==="general"?"bg-[#f5ead6] text-[#8b6424]":"bg-[#dfece6] text-[#1f6650]"}`}>{mode==="general"?"General resume":"Tailored application"}</span>You stay in control</span><h1 className="mt-2 font-display text-4xl md:text-5xl">Strong, specific, still you.</h1><p className="mt-2 text-sm text-ink/45">Preview everything, change any section, and export only when you’re ready.</p></div><button onClick={()=>{setStage("input");setDocuments(null)}} className="text-sm text-ink/45 underline underline-offset-4">Start another role</button></div>
       <div className="mb-5 rounded-[24px] border border-black/[.07] bg-white/65 p-4 shadow-sm md:flex md:items-center md:justify-between md:gap-5">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Need to change direction?</p>
-          <p className="mt-1 text-sm leading-6 text-ink/55">Go back, edit the source or strategy, then regenerate a cleaner draft without starting from scratch.</p>
+          <p className="mt-1 text-sm leading-6 text-ink/55">{mode==="general"?"Go back and edit your resume, then regenerate a cleaner draft without starting from scratch.":"Go back, edit the source or strategy, then regenerate a cleaner draft without starting from scratch."}</p>
         </div>
         <div className="mt-4 flex flex-wrap gap-2 md:mt-0 md:justify-end">
-          <button onClick={reviseInputs} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/65 transition hover:border-[#1f6650]/40">Edit resume/job</button>
+          <button onClick={reviseInputs} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/65 transition hover:border-[#1f6650]/40">{mode==="general"?"Edit resume":"Edit resume/job"}</button>
           {analysis?.questions?.length>0&&<button onClick={reviseFollowUps} className="rounded-full border border-black/10 bg-white px-4 py-2.5 text-xs font-semibold text-ink/65 transition hover:border-[#1f6650]/40">Redo questions</button>}
-          <button onClick={reviseStrategy} className="rounded-full bg-[#1f6650] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f]">Change positioning</button>
+          {mode==="tailored"&&<button onClick={reviseStrategy} className="rounded-full bg-[#1f6650] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#174f3f]">Change positioning</button>}
         </div>
       </div>
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],["coverLetter","Cover letter"],["coachAdvice","Guided review"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume"],...(mode==="tailored"?[["coverLetter","Cover letter"]]:[]),["coachAdvice","Guided review"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
       {tab!=="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_260px]">
         <section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9">
           {tab==="resume"&&<div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><Pill active={resumeView==="preview"} onClick={()=>setResumeView("preview")}>Preview</Pill><Pill active={resumeView==="edit"} onClick={()=>setResumeView("edit")}>Edit</Pill></div><button onClick={()=>setTab("coachAdvice")} className="text-xs font-semibold text-[#1f6650] underline underline-offset-4">Walk through each section →</button></div>}
@@ -537,7 +577,7 @@ export default function CoachExperience() {
         </section>
         <aside className="space-y-3">
           {tab==="resume"&&resumeView==="preview"&&<div className="rounded-[24px] border border-black/[.07] bg-white/70 p-4"><p className="text-xs uppercase tracking-widest text-[#1f6650]">Choose a look</p><div className="mt-3 space-y-2">{RESUME_TEMPLATES.map(t=><button key={t.id} onClick={()=>setDocuments({...documents,template:t.id})} className={`block w-full rounded-2xl border p-3 text-left transition ${(documents.template||"classic")===t.id?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white hover:border-[#1f6650]/30"}`}><strong className="block text-sm">{t.name}</strong><span className="mt-0.5 block text-xs text-ink/45">{t.blurb}</span></button>)}</div><p className="mt-3 text-[11px] leading-4 text-ink/35">This only changes how it looks when previewed or exported — your words stay exactly as written.</p></div>}
-          <div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why you’re a fit</p><p className="mt-3 text-sm leading-6 text-white/60">{documents.whyFit||`The writing leads with ${positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.`}</p></div>
+          <div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">{mode==="general"?"Coach’s notes":"Why you’re a fit"}</p><p className="mt-3 text-sm leading-6 text-white/60">{mode==="general"?(documents.writersNotes||"A general-purpose resume grounded in your real experience — nothing invented."):(documents.whyFit||`The writing leads with ${positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.`)}</p></div>
           <button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>
           {tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}
           <button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button>
