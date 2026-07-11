@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { parseResumeText, findTemplate, RESUME_TEMPLATES } from "@/lib/resume-templates";
+import ResumeTemplatePreview from "@/components/ResumeTemplatePreview";
 
 const fallbackPositionOptions = ["Technical expert", "Problem solver", "Results driven", "Trusted operator", "People leader", "Fast learner"];
 
@@ -77,6 +79,7 @@ export default function CoachExperience() {
   const [accountSaving, setAccountSaving] = useState(false);
   const [personalDetails, setPersonalDetails] = useState({ fullName:"", phone:"" });
   const [profileHistory, setProfileHistory] = useState([]);
+  const [resumeView, setResumeView] = useState("edit");
 
   useEffect(() => {
     const draft = localStorage.getItem("resumecoach_draft");
@@ -253,8 +256,63 @@ export default function CoachExperience() {
   }
 
   function saveBlob(blob, name) { const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
-  async function downloadWord() { const {Document,Packer,Paragraph,TextRun}=await import("docx");const paragraphs=documents.resume.split("\n").map((line,index)=>new Paragraph({children:[new TextRun({text:line,bold:index<2||/^[A-Z][A-Z ]+$/.test(line)})],spacing:{after:line?100:40}}));const blob=await Packer.toBlob(new Document({sections:[{properties:{},children:paragraphs}]}));saveBlob(blob,"ResumeCoach-resume.docx"); }
-  async function downloadPdf() { const {jsPDF}=await import("jspdf");const pdf=new jsPDF({unit:"pt",format:"a4"});const lines=pdf.splitTextToSize(documents.resume,495);let y=55;for(const line of lines){if(y>790){pdf.addPage();y=55}pdf.text(line,50,y);y+=15}pdf.save("ResumeCoach-resume.pdf"); }
+
+  async function downloadWord() {
+    const { Document, Packer, Paragraph, TextRun, AlignmentType } = await import("docx");
+    const template = findTemplate(documents.template);
+    const { name, tagline, sections } = parseResumeText(documents.resume);
+    const align = template.docx.align === "CENTER" ? AlignmentType.CENTER : AlignmentType.LEFT;
+    const children = [new Paragraph({ alignment: align, spacing: { after: 60 }, children: [new TextRun({ text: name, bold: true, size: 32, font: template.docx.font, color: template.docx.nameColor })] })];
+    if (tagline) children.push(new Paragraph({ alignment: align, spacing: { after: 220 }, children: [new TextRun({ text: tagline, size: 22, font: template.docx.font, color: template.docx.headingColor })] }));
+    for (const section of sections) {
+      if (section.title) children.push(new Paragraph({ spacing: { before: 220, after: 90 }, children: [new TextRun({ text: section.title, bold: true, size: 20, font: template.docx.font, color: template.docx.headingColor })] }));
+      for (const line of section.lines) {
+        children.push(line
+          ? new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: line, size: 20, font: template.docx.font })] })
+          : new Paragraph({ text: "", spacing: { after: 40 } }));
+      }
+    }
+    const blob = await Packer.toBlob(new Document({ sections: [{ properties: {}, children }] }));
+    saveBlob(blob, "ResumeCoach-resume.docx");
+  }
+
+  async function downloadPdf() {
+    const { jsPDF } = await import("jspdf");
+    const template = findTemplate(documents.template);
+    const t = template.pdf;
+    const { name, tagline, sections } = parseResumeText(documents.resume);
+    const pdf = new jsPDF({ unit: "pt", format: "a4" });
+    const marginX = 50, pageWidth = 495, centerX = marginX + pageWidth / 2;
+    let y = 60;
+    pdf.setFont(t.font, "bold"); pdf.setFontSize(20); pdf.setTextColor(...t.nameColor);
+    pdf.text(name, t.align === "center" ? centerX : marginX, y, t.align === "center" ? { align: "center" } : undefined);
+    y += 20;
+    if (tagline) {
+      pdf.setFont(t.font, "normal"); pdf.setFontSize(11); pdf.setTextColor(90, 90, 90);
+      pdf.text(tagline, t.align === "center" ? centerX : marginX, y, t.align === "center" ? { align: "center" } : undefined);
+      y += 24;
+    } else y += 12;
+    for (const section of sections) {
+      if (y > 760) { pdf.addPage(); y = 55; }
+      if (section.title) {
+        pdf.setFont(t.font, "bold"); pdf.setFontSize(11); pdf.setTextColor(...t.headingColor);
+        pdf.text(section.title, marginX, y);
+        if (t.rule) { pdf.setDrawColor(...t.headingColor); pdf.line(marginX, y + 4, marginX + pageWidth, y + 4); }
+        y += 18;
+      }
+      pdf.setFont(t.font, "normal"); pdf.setFontSize(10); pdf.setTextColor(30, 30, 30);
+      for (const line of section.lines) {
+        if (!line) { y += 8; continue; }
+        for (const wrapped of pdf.splitTextToSize(line, pageWidth)) {
+          if (y > 780) { pdf.addPage(); y = 55; }
+          pdf.text(wrapped, marginX, y);
+          y += 14;
+        }
+      }
+      y += 8;
+    }
+    pdf.save("ResumeCoach-resume.pdf");
+  }
 
   async function begin() {
     setError("");setAnswers([]);setAnswer("");setQuestionIndex(0);setConsultationLoading(false);setStage("analysing");
@@ -400,7 +458,21 @@ export default function CoachExperience() {
         </div>
       </div>
       <div className="mb-5 flex gap-2 overflow-x-auto pb-1">{[["resume","Resume preview"],["coverLetter","Cover letter"],["coachAdvice","Guided review"]].map(([k,l])=><Pill key={k} active={tab===k} onClick={()=>setTab(k)}>{l}</Pill>)}</div>
-      {tab!=="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_260px]"><section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9"><textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/></section><aside className="space-y-3"><div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div><button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>{tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}<button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button></aside></div>}
+      {tab!=="coachAdvice"&&<div className="grid gap-5 lg:grid-cols-[1fr_260px]">
+        <section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-9">
+          {tab==="resume"&&<div className="mb-5 flex gap-2"><Pill active={resumeView==="edit"} onClick={()=>setResumeView("edit")}>Edit text</Pill><Pill active={resumeView==="preview"} onClick={()=>setResumeView("preview")}>Template preview</Pill></div>}
+          {tab==="resume"&&resumeView==="preview"
+            ? <ResumeTemplatePreview resumeText={documents.resume} templateId={documents.template}/>
+            : <textarea value={documents[tab]} onChange={e=>setDocuments({...documents,[tab]:e.target.value})} className="min-h-[650px] w-full resize-none bg-transparent font-body text-sm leading-7 outline-none"/>}
+        </section>
+        <aside className="space-y-3">
+          {tab==="resume"&&<div className="rounded-[24px] border border-black/[.07] bg-white/70 p-4"><p className="text-xs uppercase tracking-widest text-[#1f6650]">Choose a look</p><div className="mt-3 space-y-2">{RESUME_TEMPLATES.map(t=><button key={t.id} onClick={()=>setDocuments({...documents,template:t.id})} className={`block w-full rounded-2xl border p-3 text-left transition ${(documents.template||"classic")===t.id?"border-[#1f6650] bg-[#dfece6]":"border-black/[.07] bg-white hover:border-[#1f6650]/30"}`}><strong className="block text-sm">{t.name}</strong><span className="mt-0.5 block text-xs text-ink/45">{t.blurb}</span></button>)}</div><p className="mt-3 text-[11px] leading-4 text-ink/35">This only changes how it looks when previewed or exported — your words stay exactly as written.</p></div>}
+          <div className="rounded-[24px] bg-[#18201d] p-5 text-white"><p className="text-xs uppercase tracking-widest text-[#98bfae]">Why it works</p><p className="mt-3 text-sm leading-6 text-white/60">The writing leads with {positioning.toLowerCase()}, mirrors the role’s language and keeps every claim grounded in your evidence.</p></div>
+          <button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>
+          {tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}
+          <button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button>
+        </aside>
+      </div>}
       {tab==="coachAdvice"&&<div><div className="mb-5 flex flex-col justify-between gap-4 rounded-[24px] bg-[#dfece6] p-5 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Your first draft is ready</p><p className="mt-1 text-sm leading-6 text-ink/60">This is your draft. Jump between sections, keep what works, change anything, or preview and export whenever you’re ready.</p></div><button onClick={()=>setTab("resume")} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-5 py-3 text-sm font-semibold text-[#1f6650]">Preview full resume</button></div><div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <aside className="rounded-[24px] border border-black/[.07] bg-white/65 p-4 lg:sticky lg:top-24 lg:self-start"><div className="flex items-center justify-between gap-3 px-2 pb-3"><p className="text-xs font-semibold uppercase tracking-widest text-ink/40">Resume sections</p><span className="text-xs text-[#1f6650]">{Object.keys(reviewStatuses).length}/{reviewSections.length} reviewed</span></div><div className="max-h-64 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible">{reviewSections.map((section,index)=><button key={`${section.title}-${index}`} onClick={()=>{setReviewIndex(index);setReviewEditing(false);setReviewMessage("")}} className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left text-sm transition ${reviewIndex===index?"border-[#1f6650] bg-[#dfece6]":"border-transparent bg-white/70 hover:border-[#1f6650]/20"}`}><span>{section.title}</span>{reviewStatuses[index]&&<span className={`text-[10px] font-semibold uppercase ${reviewStatuses[index]==="updated"?"text-[#b06b22]":"text-[#1f6650]"}`}>{reviewStatuses[index]==="updated"?"Updated":"Kept"}</span>}</button>)}</div><button onClick={()=>setTab("resume")} className="mt-4 w-full rounded-full bg-[#18201d] px-4 py-3 text-xs font-semibold text-white">Preview & export</button></aside>
         <section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-8">{reviewSection?<><div className="flex items-center justify-between gap-4"><span className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Section {reviewIndex+1}</span><span className="text-xs text-ink/35">Select any section from the list</span></div><h2 className="mt-3 font-display text-4xl">{reviewSection.title}</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><div className="rounded-[20px] bg-[#dfece6] p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Why it was written this way</p><p className="mt-2 text-sm leading-6 text-ink/65">{reviewSection.rationale}</p></div><div className="rounded-[20px] border border-black/[.07] bg-[#f4f2eb]/70 p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">What to keep</p><ul className="mt-2 space-y-2 text-sm leading-6 text-ink/65">{(reviewSection.keep||[]).map(item=><li key={item}>✓ {item}</li>)}</ul></div></div>{reviewSection.consider?.length>0&&<div className="mt-3 rounded-[20px] border border-[#e5bc78]/40 bg-[#fff7e8] p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#9a651d]">What you could change</p><ul className="mt-2 space-y-2 text-sm leading-6 text-ink/65">{reviewSection.consider.map(item=><li key={item}>→ {item}</li>)}</ul></div>}<div className="mt-4 rounded-[20px] border border-black/[.07] bg-white p-4"><p className="mb-3 text-xs font-semibold uppercase tracking-widest text-ink/35">First-draft section</p><pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-body text-sm leading-7 text-ink/75">{reviewSection.content}</pre></div>{reviewMessage&&<p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{reviewMessage}</p>}{reviewEditing?<div className="mt-4 rounded-[20px] border border-[#1f6650]/20 bg-white p-4"><label className="text-xs font-semibold text-[#1f6650]">What would you like changed?</label><textarea autoFocus value={reviewInstruction} onChange={e=>setReviewInstruction(e.target.value)} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-[#f4f2eb] p-3 text-sm leading-6 outline-none" placeholder="Make this warmer, shorter, more specific, or emphasise a different strength…"/><div className="mt-3 flex justify-end gap-2"><button disabled={reviewSaving} onClick={()=>{setReviewEditing(false);setReviewInstruction("")}} className="rounded-full px-4 py-2 text-xs text-ink/45">Cancel</button><button disabled={!reviewInstruction.trim()||reviewSaving} onClick={reviseReviewSection} className="rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white disabled:opacity-30">{reviewSaving?"Updating…":"Update only this section"}</button></div></div>:<div className="mt-5 flex flex-col gap-3 sm:flex-row"><button onClick={advanceReview} className="flex-1 rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white">{reviewIndex===reviewSections.length-1?"Keep section — finish review":"Keep section — next →"}</button><button onClick={()=>{setReviewEditing(true);setReviewMessage("")}} className="flex-1 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink/65">Change this section</button></div>}</>:<p className="text-sm text-ink/50">Your guided review will appear here.</p>}</section>
