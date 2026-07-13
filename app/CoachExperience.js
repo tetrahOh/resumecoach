@@ -184,6 +184,9 @@ export default function CoachExperience() {
   const [accountSaving, setAccountSaving] = useState(false);
   const [personalDetails, setPersonalDetails] = useState({ fullName:"", phone:"" });
   const [profileHistory, setProfileHistory] = useState([]);
+  const [deleteApplicationConfirmId, setDeleteApplicationConfirmId] = useState("");
+  const [deletingApplicationId, setDeletingApplicationId] = useState("");
+  const [openedApplicationId, setOpenedApplicationId] = useState("");
   const [resumeView, setResumeView] = useState("preview");
   const [customPositioningInput, setCustomPositioningInput] = useState("");
   const [customPositioningLoading, setCustomPositioningLoading] = useState(false);
@@ -283,6 +286,19 @@ export default function CoachExperience() {
     if(response.ok)setProfileHistory(Array.isArray(result)?result:[]);
   }
 
+  async function deleteSavedApplication(id) {
+    setDeletingApplicationId(id);setError("");setProfileNotice("");
+    try {
+      const response=await fetch(`/api/documents?id=${encodeURIComponent(id)}`,{method:"DELETE"});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.error||"That saved application could not be deleted.");
+      setProfileHistory(current=>current.filter(item=>item.id!==id));
+      setDeleteApplicationConfirmId("");
+      if(openedApplicationId===id)setOpenedApplicationId("");
+      setProfileNotice("Saved application deleted.");
+    } catch(e) { setError(e.message); } finally { setDeletingApplicationId(""); }
+  }
+
   async function openHistoryItem(item) {
     if(!item.documents&&!item.generated_resume){
       setProfileSaving(true);setError("");
@@ -295,7 +311,7 @@ export default function CoachExperience() {
       setProfileSaving(false);
     }
     const saved=item.documents&&Object.keys(item.documents).length?item.documents:{resume:item.generated_resume||"",coverLetter:item.cover_letter||"",writersNotes:item.writers_notes||"",reviewSections:[]};
-    setDocuments(saved);setAnalysis(item.analysis||null);setAnswers(item.follow_up_answers||[]);setPositioning(item.positioning||"Problem solver");setTab("resume");setResumeView("preview");setStage("result");setMenuOpen(false);
+    setOpenedApplicationId(item.id);setDocuments(saved);setAnalysis(item.analysis||null);setAnswers(item.follow_up_answers||[]);setPositioning(item.positioning||"Problem solver");setTab("resume");setResumeView("preview");setStage("result");setMenuOpen(false);
   }
 
   async function chooseProfile(id) {
@@ -305,7 +321,7 @@ export default function CoachExperience() {
     if(!selected){setProfileSaving(false);return}
     persistActiveProfile().catch(e=>setError(e.message));
     const workspace=selected?.workspace_data||{};
-    setActiveProfileId(id);setMode(selected?.mode==="general"?"general":"tailored");setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
+    setOpenedApplicationId("");setDeleteApplicationConfirmId("");setActiveProfileId(id);setMode(selected?.mode==="general"?"general":"tailored");setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
     setProfileSaving(false);
     loadProfileHistory(id).catch(()=>{});
   }
@@ -550,8 +566,8 @@ export default function CoachExperience() {
       }
       const savedPositioning = mode==="general" ? null : positioning;
       const savedJobDescription = mode==="general" ? "" : jobDescription;
-      setDocuments(data);setTab("resume");setResumeView("preview");setReviewIndex(0);setReviewEditing(false);setReviewInstruction("");setReviewMessage("");setReviewStatuses({});setStage("result");localStorage.setItem("resumecoach_latest", JSON.stringify(data));
-      if(activeProfileId){const historyResponse=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId,resume,jobDescription:savedJobDescription,analysis,answers,positioning:savedPositioning,documents:data})});const historyItem=await historyResponse.json().catch(()=>null);if(historyResponse.ok&&historyItem)setProfileHistory(current=>[historyItem,...current]);}
+      setDocuments(data);setOpenedApplicationId("");setTab("resume");setResumeView("preview");setReviewIndex(0);setReviewEditing(false);setReviewInstruction("");setReviewMessage("");setReviewStatuses({});setStage("result");localStorage.setItem("resumecoach_latest", JSON.stringify(data));
+      if(activeProfileId){const historyResponse=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId,resume,jobDescription:savedJobDescription,analysis,answers,positioning:savedPositioning,documents:data})});const historyItem=await historyResponse.json().catch(()=>null);if(historyResponse.ok&&historyItem){setOpenedApplicationId(historyItem.id);setProfileHistory(current=>[historyItem,...current]);}}
       try {
         const response=await fetch("/api/documents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profileId:activeProfileId||null,resume,jobDescription:savedJobDescription,analysis,answers,positioning:savedPositioning,documents:data})});
         const result=await response.json().catch(() => ({}));
@@ -613,7 +629,7 @@ export default function CoachExperience() {
     {error && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-red-900/10 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
     {profileNotice && <div className="mx-auto mt-5 max-w-3xl rounded-2xl border border-emerald-900/10 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{profileNotice}</div>}
 
-    {stage==="input"&&activeProfileId&&<section className="mx-auto mt-5 max-w-6xl px-5"><div className="rounded-[24px] border border-black/[.07] bg-white/55 p-5"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">This profile’s history</p><h2 className="mt-1 font-display text-2xl">Saved applications</h2></div><span className="text-xs text-ink/40">{profileHistory.length} saved</span></div>{profileHistory.length?<div className="mt-4 grid gap-2 md:grid-cols-3">{profileHistory.slice(0,6).map(item=><button key={item.id} onClick={()=>openHistoryItem(item)} className="rounded-[18px] border border-black/[.07] bg-white p-4 text-left transition hover:border-[#1f6650]/35"><strong className="block text-sm">{item.job_title||"Untitled application"}</strong><span className="mt-1 block text-xs text-ink/45">{item.company||"Saved draft"} · {new Date(item.created_at).toLocaleDateString("en-AU")}</span></button>)}</div>:<p className="mt-3 text-sm text-ink/45">Generated resumes and cover letters for this profile will appear here automatically.</p>}</div></section>}
+    {stage==="input"&&activeProfileId&&<section className="mx-auto mt-5 max-w-6xl px-5"><div className="rounded-[24px] border border-black/[.07] bg-white/55 p-5"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">This profile’s history</p><h2 className="mt-1 font-display text-2xl">Saved applications</h2></div><span className="text-xs text-ink/40">{profileHistory.length} saved</span></div>{profileHistory.length?<div className="mt-4 grid gap-2 md:grid-cols-3">{profileHistory.slice(0,6).map(item=><div key={item.id} className="rounded-[18px] border border-black/[.07] bg-white p-4 transition hover:border-[#1f6650]/35"><button onClick={()=>openHistoryItem(item)} className="block w-full text-left"><strong className="block text-sm">{item.job_title||"Untitled application"}</strong><span className="mt-1 block text-xs text-ink/45">{item.company||"Saved draft"} · {new Date(item.created_at).toLocaleDateString("en-AU")}</span></button>{deleteApplicationConfirmId===item.id?<div className="mt-3 rounded-2xl bg-red-50 p-3"><p className="text-xs leading-5 text-red-800">Delete this saved application from your history?</p><div className="mt-2 flex gap-2"><button disabled={deletingApplicationId===item.id} onClick={()=>setDeleteApplicationConfirmId("")} className="rounded-full px-3 py-1.5 text-[11px] font-semibold text-ink/45">Cancel</button><button disabled={deletingApplicationId===item.id} onClick={()=>deleteSavedApplication(item.id)} className="rounded-full bg-red-700 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40">{deletingApplicationId===item.id?"Deleting…":"Delete"}</button></div></div>:<button disabled={Boolean(deletingApplicationId)} onClick={()=>setDeleteApplicationConfirmId(item.id)} className="mt-3 text-xs font-semibold text-red-700 underline underline-offset-4 disabled:opacity-40">Delete saved application</button>}</div>)}</div>:<p className="mt-3 text-sm text-ink/45">Generated resumes and cover letters for this profile will appear here automatically.</p>}</div></section>}
 
     {extracting&&<div className="fixed inset-0 z-[100] grid cursor-wait place-items-center bg-[#18201d]/70 p-5 backdrop-blur-md" role="alertdialog" aria-modal="true" aria-labelledby="file-reading-title" aria-describedby="file-reading-description"><div className="w-full max-w-md rounded-[30px] bg-[#f4f2eb] p-8 text-center shadow-2xl"><div className="relative mx-auto mb-6 h-16 w-16"><span className="absolute inset-0 animate-ping rounded-full bg-[#98bfae]/30"/><span className="absolute inset-2 animate-pulse rounded-full bg-[#1f6650]"/><span className="absolute inset-0 grid place-items-center text-xl text-white">✦</span></div><p className="text-xs font-semibold uppercase tracking-[.18em] text-[#1f6650]">File received</p><h2 id="file-reading-title" className="mt-2 font-display text-3xl">Reading your {extracting==="resume"?"resume":"job description"}…</h2><p id="file-reading-description" className="mt-3 text-sm leading-6 text-ink/55">Extracting the text and checking the document. This usually takes a few moments.</p><div className="mt-7 h-2 overflow-hidden rounded-full bg-black/10" aria-label="Reading in progress"><div className="h-full w-2/3 animate-pulse rounded-full bg-[#1f6650]"/></div><p className="mt-4 text-xs text-ink/40">Please keep this window open. You can continue when reading is complete.</p></div></div>}
 
@@ -692,6 +708,7 @@ export default function CoachExperience() {
           <button onClick={()=>navigator.clipboard.writeText(documents[tab])} className="w-full rounded-full border border-black/10 bg-white py-3 text-sm font-semibold transition hover:border-[#1f6650]">Copy to clipboard</button>
           {tab==="resume"&&<><button onClick={downloadWord} className="w-full rounded-full border border-[#1f6650] bg-white py-3 text-sm font-semibold text-[#1f6650]">Download Word</button><button onClick={downloadPdf} className="w-full rounded-full bg-[#1f6650] py-3 text-sm font-semibold text-white">Download PDF</button></>}
           <button onClick={()=>saveBlob(new Blob([documents[tab]],{type:"text/plain"}),`resumecoach-${tab}.txt`)} className="w-full py-2 text-xs text-ink/40 underline underline-offset-4">Download plain text</button>
+          {openedApplicationId&&<div className="rounded-[20px] border border-red-900/10 bg-red-50 p-4">{deleteApplicationConfirmId===openedApplicationId?<><p className="text-xs leading-5 text-red-800">Delete this saved application from your history? Your current preview will stay open until you leave this page.</p><div className="mt-3 flex gap-2"><button disabled={deletingApplicationId===openedApplicationId} onClick={()=>setDeleteApplicationConfirmId("")} className="flex-1 rounded-full border border-red-900/10 bg-white py-2 text-xs font-semibold text-ink/55">Cancel</button><button disabled={deletingApplicationId===openedApplicationId} onClick={()=>deleteSavedApplication(openedApplicationId)} className="flex-1 rounded-full bg-red-700 py-2 text-xs font-semibold text-white disabled:opacity-40">{deletingApplicationId===openedApplicationId?"Deleting…":"Delete"}</button></div></>:<button disabled={Boolean(deletingApplicationId)} onClick={()=>setDeleteApplicationConfirmId(openedApplicationId)} className="w-full rounded-full bg-white py-2.5 text-xs font-semibold text-red-700 disabled:opacity-40">Delete saved application</button>}</div>}
         </aside>
       </div>}
       {tab==="coachAdvice"&&<div><div className="mb-5 flex flex-col justify-between gap-4 rounded-[24px] bg-[#dfece6] p-5 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Your first draft is ready</p><p className="mt-1 text-sm leading-6 text-ink/60">{reviewSections.length?"Start below with your first section — read it, then keep it or ask for a change before moving to the next.":"Preview the full resume, or go back to edit and regenerate."}</p></div><button onClick={()=>{setTab("resume");setResumeView("preview")}} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-5 py-3 text-sm font-semibold text-[#1f6650]">Preview full resume</button></div>
