@@ -111,25 +111,25 @@ export default function CoachExperience() {
     createClient().auth.getUser().then(async ({ data }) => {
       setUser(data.user);
       if (!data.user) return;
-      const response = await fetch("/api/profiles");
-      const result = await response.json().catch(() => ({}));
+      const [response,accountResponse] = await Promise.all([fetch("/api/profiles"),fetch("/api/account")]);
+      const [result,account] = await Promise.all([response.json().catch(() => ({})),accountResponse.json().catch(() => ({}))]);
       if (!response.ok) throw new Error(result.error || "Your career profiles could not be loaded.");
       if (Array.isArray(result)) setProfiles(result);
-      const accountResponse = await fetch("/api/account");
-      const account = await accountResponse.json().catch(() => ({}));
       if (accountResponse.ok) setPersonalDetails({ fullName:account.full_name||"", phone:account.phone||"" });
     }).catch(e => setError(e.message));
   }, []);
-  useEffect(() => { localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })); }, [resume, jobDescription]);
+  useEffect(() => {
+    const timer=setTimeout(()=>localStorage.setItem("resumecoach_draft", JSON.stringify({ resume, jobDescription })),350);
+    return()=>clearTimeout(timer);
+  }, [resume, jobDescription]);
   useEffect(() => {
     if (!activeProfileId) return;
     const timer=setTimeout(async()=>{
       const savedStage=["analysing","generating"].includes(stage)?"input":stage;
       const workspaceData={analysis,answers,questionIndex,positioning,documents,recommendationChoices,reviewStatuses,stage:savedStage};
       try {
-        const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:activeProfileId,resume,jobDescription,workspaceData})});
-        const result=await response.json().catch(()=>({}));
-        if(response.ok)setProfiles(current=>current.map(profile=>profile.id===result.id?result:profile));
+        const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:activeProfileId,resume,jobDescription,workspaceData,quiet:true})});
+        if(response.ok)setProfiles(current=>current.map(profile=>profile.id===activeProfileId?{...profile,resume_text:resume,job_description:jobDescription,workspace_data:workspaceData,updated_at:new Date().toISOString()}:profile));
       } catch {}
     },900);
     return()=>clearTimeout(timer);
@@ -181,10 +181,11 @@ export default function CoachExperience() {
 
   async function persistActiveProfile() {
     if(!activeProfileId)return;
-    const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:activeProfileId,resume,jobDescription,workspaceData:profileWorkspaceData()})});
+    const workspaceData=profileWorkspaceData();
+    const response=await fetch("/api/profiles",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:activeProfileId,resume,jobDescription,workspaceData,quiet:true})});
     const result=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(result.error||"Your profile session could not be saved.");
-    setProfiles(current=>current.map(profile=>profile.id===result.id?result:profile));
+    setProfiles(current=>current.map(profile=>profile.id===activeProfileId?{...profile,resume_text:resume,job_description:jobDescription,workspace_data:workspaceData,updated_at:result.updated_at||new Date().toISOString()}:profile));
     return result;
   }
 
@@ -195,27 +196,31 @@ export default function CoachExperience() {
     if(response.ok)setProfileHistory(Array.isArray(result)?result:[]);
   }
 
-  function openHistoryItem(item) {
+  async function openHistoryItem(item) {
+    if(!item.documents&&!item.generated_resume){
+      setProfileSaving(true);setError("");
+      try {
+        const response=await fetch(`/api/documents?id=${encodeURIComponent(item.id)}`);
+        const fullItem=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(fullItem.error||"That saved application could not be loaded.");
+        item=fullItem;
+      } catch(e) { setError(e.message);setProfileSaving(false);return; }
+      setProfileSaving(false);
+    }
     const saved=item.documents&&Object.keys(item.documents).length?item.documents:{resume:item.generated_resume||"",coverLetter:item.cover_letter||"",writersNotes:item.writers_notes||"",reviewSections:[]};
     setDocuments(saved);setAnalysis(item.analysis||null);setAnswers(item.follow_up_answers||[]);setPositioning(item.positioning||"Problem solver");setTab("resume");setResumeView("preview");setStage("result");setMenuOpen(false);
   }
 
   async function chooseProfile(id) {
     if(id===activeProfileId)return;
-    setProfileSaving(true);setError("");setProfileNotice("");
-    let freshProfiles=profiles;
-    try {
-      await persistActiveProfile();
-      const response=await fetch("/api/profiles");
-      const result=await response.json().catch(()=>[]);
-      if(!response.ok)throw new Error(result.error||"Your profiles could not be loaded.");
-      freshProfiles=Array.isArray(result)?result:[];
-      setProfiles(freshProfiles);
-    } catch(e) { setError(e.message);setProfileSaving(false); return; }
-    const selected=freshProfiles.find(p=>p.id===id);
+    setProfileSaving(true);setError("");setProfileNotice("");setProfileHistory([]);
+    const selected=profiles.find(p=>p.id===id);
+    if(!selected){setProfileSaving(false);return}
+    persistActiveProfile().catch(e=>setError(e.message));
     const workspace=selected?.workspace_data||{};
     setActiveProfileId(id);setMode(selected?.mode==="general"?"general":"tailored");setResume(selected?.resume_text||"");setJobDescription(selected?.job_description||"");setAnalysis(workspace.analysis||null);setAnswers(workspace.answers||[]);setAnswer("");setQuestionIndex(workspace.questionIndex||0);setPositioning(workspace.positioning||"Problem solver");setDocuments(workspace.documents||null);setRecommendationChoices(workspace.recommendationChoices||{});setReviewStatuses(workspace.reviewStatuses||{});setStage(workspace.stage||"input");
-    try { await loadProfileHistory(id); } finally { setProfileSaving(false); }
+    setProfileSaving(false);
+    loadProfileHistory(id).catch(()=>{});
   }
   async function createProfile() {
     if(profiles.length>=3){setProfileError("You can create up to three career profiles.");return}
@@ -612,5 +617,3 @@ export default function CoachExperience() {
     <footer className="mx-auto flex max-w-6xl justify-center px-5 py-8 text-[11px] text-ink/30">Claude-powered</footer>
   </main>;
 }
-
-
