@@ -21,6 +21,20 @@ function percentClamp(value) {
   return Math.max(0, Math.min(100, Math.round(number)));
 }
 
+function priorityList(priorities) {
+  if (Array.isArray(priorities)) return priorities;
+  if (priorities && typeof priorities === "object") {
+    return Object.entries(priorities).map(([category, score]) => ({ category, score }));
+  }
+  return [];
+}
+
+function scoreMap(scores) {
+  if (Array.isArray(scores)) return Object.fromEntries(scores.map(c => [c.category, c.score]));
+  if (scores && typeof scores === "object") return scores;
+  return {};
+}
+
 function ScoreBars({ title, entries, tone = "green", selected }) {
   const fill = tone === "gold" ? "bg-[#c9963e]" : "bg-[#1f6650]";
   return <div className="rounded-[24px] border border-black/[.07] bg-white/65 p-5">
@@ -488,10 +502,10 @@ export default function CoachExperience() {
   }
 
   const canBegin = mode==="general" ? resume.trim().length > 80 : resume.trim().length > 80 && jobDescription.trim().length > 80;
-  const priorityEntries = analysis ? [...(analysis.priorities||[])].sort((a,b) => b.score - a.score).map(p=>[p.category,p.score]) : [];
+  const priorityEntries = analysis ? priorityList(analysis.priorities).sort((a,b) => percentClamp(b.score) - percentClamp(a.score)).map(p=>[p.category,p.score]) : [];
   const positioningOptions = analysis?.positioningOptions?.length ? analysis.positioningOptions : fallbackPositionOptions.map((label,index)=>({label,reason:"A credible way to frame the evidence in your experience.",evidence:[],resumeScore:Math.max(35,76-index*8),roleScore:Math.max(35,72-index*7)}));
   const selectedPositioning = positioningOptions.find(option=>option.label===positioning) || positioningOptions[0];
-  const categoryFitMap = Object.fromEntries((selectedPositioning?.categoryFit||[]).map(c=>[c.category,c.score]));
+  const categoryFitMap = scoreMap(selectedPositioning?.categoryFit);
   const resumeProofEntries = priorityEntries.map(([category])=>[category, categoryFitMap[category] ?? 0]);
   const recommendations = analysis?.recommendations || [];
   const reviewSections = documents?.reviewSections || [];
@@ -598,6 +612,5 @@ export default function CoachExperience() {
     <footer className="mx-auto flex max-w-6xl justify-center px-5 py-8 text-[11px] text-ink/30">Claude-powered</footer>
   </main>;
 }
-
 
 
