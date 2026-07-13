@@ -35,6 +35,93 @@ function scoreMap(scores) {
   return {};
 }
 
+function reviewAdviceForTitle(title = "") {
+  const lower = title.toLowerCase();
+  if (lower.includes("summary") || lower.includes("profile")) {
+    return {
+      rationale: "This opening is written to give the reader a fast, useful picture of your strongest fit before they scan the rest of the resume.",
+      keep: ["Keep the role-relevant strengths that feel true to your experience.", "Keep specific tools, domains or outcomes that make the summary feel grounded."],
+      consider: ["Change any wording that feels too broad.", "Add one sharper proof point if the summary feels like it could belong to anyone."]
+    };
+  }
+  if (lower.includes("experience") || lower.includes("employment") || lower.includes("work")) {
+    return {
+      rationale: "This section is where the resume earns trust. It connects what you have done with the kind of evidence a recruiter or hiring manager can believe.",
+      keep: ["Keep bullets that show action, scope, tools or outcomes.", "Keep examples that connect clearly to the role you want."],
+      consider: ["Add numbers, scale, tools or business context where you can support them.", "Remove or soften claims that feel bigger than the evidence you provided."]
+    };
+  }
+  if (lower.includes("skill") || lower.includes("capabilit") || lower.includes("technical")) {
+    return {
+      rationale: "This section is written for quick scanning. It helps the reader spot the capabilities that match the role before they read the deeper evidence.",
+      keep: ["Keep skills you can confidently talk about in an interview.", "Keep the skills most connected to the role’s priorities."],
+      consider: ["Remove anything you would not want to be asked about.", "Group similar skills if the section feels too long."]
+    };
+  }
+  if (lower.includes("education") || lower.includes("cert") || lower.includes("training")) {
+    return {
+      rationale: "This section supports your credibility and shows the learning signals that strengthen your positioning.",
+      keep: ["Keep credentials that reinforce the role direction.", "Keep recent or recognised learning that supports your story."],
+      consider: ["Move less relevant items lower if they distract from stronger evidence.", "Add dates or status only where it helps the reader understand your progress."]
+    };
+  }
+  if (lower.includes("project") || lower.includes("portfolio")) {
+    return {
+      rationale: "This section turns extra work into proof. It shows how you apply skills outside a job title and gives the reader more evidence to trust.",
+      keep: ["Keep projects that show practical, role-relevant ability.", "Keep details that explain what you built, improved or learned."],
+      consider: ["Add the problem, action and result if a project feels vague.", "Remove projects that do not support the direction you want."]
+    };
+  }
+  if (lower.includes("contact") || lower.includes("header")) {
+    return {
+      rationale: "The header keeps the essentials easy to find so the reader can focus on your fit, not hunt for basic details.",
+      keep: ["Keep the contact details you want employers to use.", "Keep the header simple and easy to scan."],
+      consider: ["Remove links or details that are not useful for this application.", "Check spelling, phone number and email before exporting."]
+    };
+  }
+  return {
+    rationale: "This section is included because it carries useful evidence for your story. Review it for accuracy, relevance and whether it helps the role direction.",
+    keep: ["Keep details that are truthful, specific and relevant to the role.", "Keep language that sounds like you and can be backed up in conversation."],
+    consider: ["Tighten anything that feels generic.", "Add a result, tool or scale where you can support it."]
+  };
+}
+
+function reviewContentFromItems(items = []) {
+  return items.map(item => {
+    if (!item || item.type === "blank") return "";
+    if (item.type === "bullet") return `• ${item.text}`;
+    if (item.type === "heading") return item.date ? `${item.text} — ${item.date}` : item.text;
+    return item.text || "";
+  }).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function buildReviewSectionsFromResume(resumeText = "") {
+  const text = resumeText.trim();
+  if (!text) return [];
+  const parsed = parseResumeText(text);
+  const sections = [];
+  const headerContent = [parsed.name, parsed.tagline, parsed.contact].filter(Boolean).join("\n").trim();
+  if (headerContent) {
+    sections.push({ title: "Contact header", content: headerContent, ...reviewAdviceForTitle("Contact header") });
+  }
+  for (const section of parsed.sections || []) {
+    const content = reviewContentFromItems(section.items);
+    if (!content) continue;
+    const title = section.title?.trim() || "Resume section";
+    sections.push({ title, content, ...reviewAdviceForTitle(title) });
+  }
+  if (!sections.length) {
+    sections.push({
+      title: "Full draft",
+      content: text,
+      rationale: "This walkthrough is built from the full resume because clear section headings were not detected yet.",
+      keep: ["Keep anything that is accurate, specific and useful for the role.", "Keep the parts that sound like you and match the job direction."],
+      consider: ["Add clear section headings so the app can guide you through smaller sections next time.", "Tighten any claim that feels too broad or unsupported."]
+    });
+  }
+  return sections;
+}
+
 function ScoreBars({ title, entries, tone = "green", selected }) {
   const fill = tone === "gold" ? "bg-[#c9963e]" : "bg-[#1f6650]";
   return <div className="rounded-[24px] border border-black/[.07] bg-white/65 p-5">
@@ -486,7 +573,7 @@ export default function CoachExperience() {
   }
 
   function advanceReview() {
-    const sections=documents?.reviewSections||[];
+    const sections=reviewSections;
     setReviewMessage("");setReviewEditing(false);setReviewInstruction("");
     setReviewStatuses(current=>({...current,[reviewIndex]:current[reviewIndex]||"kept"}));
     if(reviewIndex<sections.length-1)setReviewIndex(reviewIndex+1);
@@ -494,14 +581,14 @@ export default function CoachExperience() {
   }
 
   async function reviseReviewSection() {
-    const section=documents?.reviewSections?.[reviewIndex];
+    const section=reviewSections?.[reviewIndex];
     if(!section||!reviewInstruction.trim())return;
     setReviewSaving(true);setReviewMessage("");setError("");
     try {
       const revised=await callCoach("reviseSection",{resume:documents.resume,jobDescription:mode==="general"?"":jobDescription,positioning:mode==="general"?"":positioning,section,instruction:reviewInstruction});
-      const reviewSections=documents.reviewSections.map((item,index)=>index===reviewIndex?{...item,content:revised.content,rationale:revised.rationale}:item);
+      const updatedReviewSections=reviewSections.map((item,index)=>index===reviewIndex?{...item,content:revised.content,rationale:revised.rationale}:item);
       const updatedResume=documents.resume.includes(section.content)?documents.resume.replace(section.content,revised.content):documents.resume;
-      const updated={...documents,resume:updatedResume,reviewSections};
+      const updated={...documents,resume:updatedResume,reviewSections:updatedReviewSections};
       setDocuments(updated);localStorage.setItem("resumecoach_latest",JSON.stringify(updated));setReviewStatuses(current=>({...current,[reviewIndex]:"updated"}));setReviewInstruction("");setReviewEditing(false);setReviewMessage("Section updated. Review the change, then continue when it feels right.");
     } catch(e) { setError(e.message); } finally { setReviewSaving(false); }
   }
@@ -513,8 +600,8 @@ export default function CoachExperience() {
   const categoryFitMap = scoreMap(selectedPositioning?.categoryFit);
   const resumeProofEntries = priorityEntries.map(([category])=>[category, categoryFitMap[category] ?? 0]);
   const recommendations = analysis?.recommendations || [];
-  const reviewSections = documents?.reviewSections || [];
-  const reviewSection = reviewSections[reviewIndex];
+  const reviewSections = documents?.reviewSections?.length ? documents.reviewSections : buildReviewSectionsFromResume(documents?.resume || "");
+  const reviewSection = reviewSections[reviewIndex] || reviewSections[0];
 
   return <main className="min-h-screen bg-[#f4f2eb] text-ink">
     <header className="sticky top-0 z-20 border-b border-black/[.06] bg-[#f4f2eb]/85 backdrop-blur-xl"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4"><Logo/><button type="button" onClick={()=>setAccountOpen(true)} aria-label="Open my profile menu" className="flex items-center gap-3 rounded-full border border-black/10 bg-white/70 px-3 py-2 text-left shadow-sm transition hover:border-[#1f6650]/35 hover:bg-white"><span className="hidden text-xs text-ink/45 sm:inline">{user?.email||"Private by default"}</span><span className="flex h-8 w-8 flex-col items-center justify-center gap-1.5 rounded-full bg-[#18201d]"><span className="h-0.5 w-4 rounded-full bg-white"/><span className="h-0.5 w-4 rounded-full bg-white"/><span className="h-0.5 w-4 rounded-full bg-white"/></span></button></div></header>
@@ -608,7 +695,7 @@ export default function CoachExperience() {
         </aside>
       </div>}
       {tab==="coachAdvice"&&<div><div className="mb-5 flex flex-col justify-between gap-4 rounded-[24px] bg-[#dfece6] p-5 sm:flex-row sm:items-center"><div><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Your first draft is ready</p><p className="mt-1 text-sm leading-6 text-ink/60">{reviewSections.length?"Start below with your first section — read it, then keep it or ask for a change before moving to the next.":"Preview the full resume, or go back to edit and regenerate."}</p></div><button onClick={()=>{setTab("resume");setResumeView("preview")}} className="shrink-0 rounded-full border border-[#1f6650] bg-white px-5 py-3 text-sm font-semibold text-[#1f6650]">Preview full resume</button></div>
-      {!reviewSections.length&&<div className="rounded-[24px] border border-dashed border-black/15 bg-white/60 p-10 text-center"><p className="text-sm text-ink/50">This draft doesn’t have a saved section-by-section walkthrough — this can happen with older applications. You can still preview and export the resume directly.</p><button onClick={()=>{setTab("resume");setResumeView("preview")}} className="mt-4 rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white">View the resume instead →</button></div>}
+      {!reviewSections.length&&<div className="rounded-[24px] border border-dashed border-black/15 bg-white/60 p-10 text-center"><p className="text-sm text-ink/50">Guided review needs a resume draft to inspect. Preview the draft, or go back and regenerate once your resume details are in place.</p><button onClick={()=>{setTab("resume");setResumeView("preview")}} className="mt-4 rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white">View the resume instead →</button></div>}
       {reviewSections.length>0&&<div className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <aside className="rounded-[24px] border border-black/[.07] bg-white/65 p-4 lg:sticky lg:top-24 lg:self-start"><div className="flex items-center justify-between gap-3 px-2 pb-2"><p className="text-xs font-semibold uppercase tracking-widest text-ink/40">Step {reviewIndex+1} of {reviewSections.length}</p><span className="text-xs text-[#1f6650]">{Object.keys(reviewStatuses).length}/{reviewSections.length} reviewed</span></div><div className="mx-2 mb-3 h-1.5 overflow-hidden rounded-full bg-black/[.06]"><div className="h-full rounded-full bg-[#1f6650] transition-all" style={{width:`${((reviewIndex+1)/reviewSections.length)*100}%`}}/></div><div className="max-h-64 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:overflow-visible">{reviewSections.map((section,index)=><button key={`${section.title}-${index}`} onClick={()=>{setReviewIndex(index);setReviewEditing(false);setReviewMessage("")}} className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-3 py-3 text-left text-sm transition ${reviewIndex===index?"border-[#1f6650] bg-[#dfece6]":"border-transparent bg-white/70 hover:border-[#1f6650]/20"}`}><span>{index+1}. {section.title}</span>{reviewStatuses[index]&&<span className={`text-[10px] font-semibold uppercase ${reviewStatuses[index]==="updated"?"text-[#b06b22]":"text-[#1f6650]"}`}>{reviewStatuses[index]==="updated"?"Updated":"Kept"}</span>}</button>)}</div><button onClick={()=>{setTab("resume");setResumeView("preview")}} className="mt-4 w-full rounded-full bg-[#18201d] px-4 py-3 text-xs font-semibold text-white">Preview & export</button></aside>
         <section className="rounded-[28px] border border-black/[.07] bg-white p-6 shadow-xl shadow-black/[.03] md:p-8">{reviewSection?<><div className="flex items-center justify-between gap-4"><span className="text-xs font-semibold uppercase tracking-[.16em] text-[#1f6650]">Section {reviewIndex+1} of {reviewSections.length}</span><span className="text-xs text-ink/35">Keep it, or ask for a change below</span></div><h2 className="mt-3 font-display text-4xl">{reviewSection.title}</h2><div className="mt-5 grid gap-3 md:grid-cols-2"><div className="rounded-[20px] bg-[#dfece6] p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">Why it was written this way</p><p className="mt-2 text-sm leading-6 text-ink/65">{reviewSection.rationale}</p></div><div className="rounded-[20px] border border-black/[.07] bg-[#f4f2eb]/70 p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#1f6650]">What to keep</p><ul className="mt-2 space-y-2 text-sm leading-6 text-ink/65">{(reviewSection.keep||[]).map(item=><li key={item}>✓ {item}</li>)}</ul></div></div>{reviewSection.consider?.length>0&&<div className="mt-3 rounded-[20px] border border-[#e5bc78]/40 bg-[#fff7e8] p-4"><p className="text-xs font-semibold uppercase tracking-widest text-[#9a651d]">What you could change</p><ul className="mt-2 space-y-2 text-sm leading-6 text-ink/65">{reviewSection.consider.map(item=><li key={item}>→ {item}</li>)}</ul></div>}<div className="mt-4 rounded-[20px] border border-black/[.07] bg-white p-4"><p className="mb-3 text-xs font-semibold uppercase tracking-widest text-ink/35">First-draft section</p><pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-body text-sm leading-7 text-ink/75">{reviewSection.content}</pre></div>{reviewMessage&&<p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{reviewMessage}</p>}{reviewEditing?<div className="mt-4 rounded-[20px] border border-[#1f6650]/20 bg-white p-4"><label className="text-xs font-semibold text-[#1f6650]">What would you like changed?</label><textarea autoFocus value={reviewInstruction} onChange={e=>setReviewInstruction(e.target.value)} rows="4" className="mt-2 w-full resize-none rounded-2xl bg-[#f4f2eb] p-3 text-sm leading-6 outline-none" placeholder="Make this warmer, shorter, more specific, or emphasise a different strength…"/><div className="mt-3 flex justify-end gap-2"><button disabled={reviewSaving} onClick={()=>{setReviewEditing(false);setReviewInstruction("")}} className="rounded-full px-4 py-2 text-xs text-ink/45">Cancel</button><button disabled={!reviewInstruction.trim()||reviewSaving} onClick={reviseReviewSection} className="rounded-full bg-[#1f6650] px-5 py-2.5 text-xs font-semibold text-white disabled:opacity-30">{reviewSaving?"Updating…":"Update only this section"}</button></div></div>:<div className="mt-5 flex flex-col gap-3 sm:flex-row"><button onClick={advanceReview} className="flex-1 rounded-full bg-[#1f6650] px-5 py-3 text-sm font-semibold text-white">{reviewIndex===reviewSections.length-1?"Keep section — finish review":"Keep section — next →"}</button><button onClick={()=>{setReviewEditing(true);setReviewMessage("")}} className="flex-1 rounded-full border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink/65">Change this section</button></div>}</>:<p className="text-sm text-ink/50">Your guided review will appear here.</p>}</section>
